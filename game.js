@@ -4,28 +4,94 @@
 import MainMenuScene from './MainMenuScene.js';
 import LeaderboardScene from './LeaderboardScene.js';
 import { timeAttack } from './time_attack.js';
+import { submitScore, getPlayerAddress, validateSubmissionData } from './contract.js';
 
 const GAME_TITLE = 'MONKNIGHT';
 
-// ======= PLAYER IDENTITY (for Monad Games ID) =======
+// game.js (bagian paling atas)
+let PLAYER_ADDRESS = "";
+let PLAYER_USERNAME = "";
+
+// Terima event dari AuthIsland (Privy)
+window.addEventListener("monknight-auth", (e) => {
+  PLAYER_ADDRESS = e.detail.address || "";
+  PLAYER_USERNAME = e.detail.username || "";
+  console.log("[Auth] address:", PLAYER_ADDRESS, "username:", PLAYER_USERNAME);
+});
+
+// Helper kalau kamu butuh di scene lain
+export function getPlayerIdentity() {
+  return { address: PLAYER_ADDRESS, username: PLAYER_USERNAME };
+}
+
+// Helper untuk cek apakah username sudah ada
+export function hasUsername() {
+  return !!(PLAYER_USERNAME && PLAYER_USERNAME.trim());
+}
+
+// ======= LEGACY SUPPORT =======
+// Backward compatibility for old system
 let PLAYER_IDENTITY = { address: null, username: null };
 
-window.setPlayerIdentity = function ({ address, username }) {
+// Update legacy object when new auth comes in
+window.addEventListener('monknight-auth', (event) => {
+  const { address, username } = event.detail;
   PLAYER_IDENTITY.address = address;
   PLAYER_IDENTITY.username = username || null;
-  // contoh: update UI dalam game, simpan di scene, dll.
+});
+
+// Legacy support for old gameAuth system
+window.setPlayerIdentity = function ({ address, username }) {
+  PLAYER_ADDRESS = address || "";
+  PLAYER_USERNAME = username || "";
+  PLAYER_IDENTITY.address = address;
+  PLAYER_IDENTITY.username = username || null;
   console.log("[Identity] address:", address, "username:", username);
 };
 
-// Contoh penggunaan di logic game (mis. saat boss mati)
-function onBossDefeated(finalScore) {
-  if (!PLAYER_IDENTITY.address) {
-    // tampilkan prompt di dalam game untuk login dulu
+// Enhanced boss defeat logic with server-side score submission
+function onBossDefeated(finalScore, gameDuration = 0) {
+  const playerAddress = getPlayerAddress();
+  
+  if (!playerAddress) {
     console.warn("Player belum login Monad Games ID");
+    // Show in-game prompt for login
     return;
   }
-  // Lanjutkan dengan logic yang memerlukan identitas player
-  console.log("Boss defeated! Player:", PLAYER_IDENTITY.username, "Score:", finalScore);
+  
+  console.log("Boss defeated! Player:", PLAYER_USERNAME, "Score:", finalScore, "Duration:", gameDuration);
+  
+  // Validate submission data before sending
+  const validation = validateSubmissionData(finalScore, gameDuration);
+  if (!validation.valid) {
+    console.error("Invalid submission data:", validation.errors);
+    return;
+  }
+  
+  // Submit score increment via secure server API
+  if (finalScore > 0) {
+    submitScore(
+      playerAddress,
+      finalScore,      // Score increment (not total)
+      gameDuration,    // Game duration for validation
+      1,              // Transaction count increment
+      {
+        bossDefeated: true,
+        playerUsername: PLAYER_USERNAME,
+        mapKey: currentMapKey
+      }
+    ).then(result => {
+      if (result && result.success) {
+        console.log("✅ Score successfully submitted to blockchain!");
+        console.log("📜 Transaction hash:", result.transactionHash);
+        // Could show success notification in game UI
+      } else {
+        console.log("❌ Failed to submit score to blockchain");
+      }
+    }).catch(err => {
+      console.error("Error submitting score:", err);
+    });
+  }
 }
 
 // ============ GLOBAL ============
@@ -540,7 +606,7 @@ function create(data) {
 
         if (mob.isBoss) {
           const elapsed = stopAndGetElapsed(this);
-          onBossDefeated(calcPointsFromTime(elapsed));
+          onBossDefeated(calcPointsFromTime(elapsed), elapsed); // Pass duration for validation
           TA_call('submitToLeaderboard', elapsed, { reason: 'kill_boss' });
           showWinOverlay(this, elapsed);
         }
@@ -1005,7 +1071,7 @@ function doComboAttack(scene) {
         // === HANYA untuk boss → stop timer, submit, overlay ===
         if (mob.isBoss) {
           const elapsed = stopAndGetElapsed(scene);
-          onBossDefeated(calcPointsFromTime(elapsed));
+          onBossDefeated(calcPointsFromTime(elapsed), elapsed); // Pass duration for validation
           TA_call('submitToLeaderboard', elapsed, { reason: 'kill_boss' });
           showWinOverlay(scene, elapsed);
         }

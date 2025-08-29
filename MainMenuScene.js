@@ -1,5 +1,6 @@
 // ============ MAIN MENU SCENE ============
 import { timeAttack } from './time_attack.js';
+import { hasUsername } from './game.js';
 
 class MainMenuScene extends Phaser.Scene {
   constructor() {
@@ -66,6 +67,38 @@ class MainMenuScene extends Phaser.Scene {
       fontSize: '20px',
       color: '#ffffff'
     }).setOrigin(0, 1).setInteractive();
+
+    // === NEW: Register Username Button ===
+    this.registerBtn = this.add.text(400, 440, "Register Username", {
+      fontSize: "20px",
+      fill: "#fff",
+      backgroundColor: "#4f46e5",
+      padding: { x: 12, y: 6 }
+    })
+      .setOrigin(0.5)
+      .setInteractive()
+      .on("pointerdown", () => {
+        try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
+        window.open("https://monad-games-id-site.vercel.app/", "_blank");
+      });
+
+    // Tampilkan tombol hanya jika username belum ada
+    this.registerBtn.setVisible(!hasUsername());
+
+    // Update visibility kalau status auth berubah (setelah login atau setelah refresh data)
+    window.addEventListener("monknight-auth", () => {
+      this.registerBtn.setVisible(!hasUsername());
+    });
+
+    // Hover effects for register button
+    this.registerBtn.on('pointerover', () => {
+      this.input.setDefaultCursor('pointer');
+      this.registerBtn.setStyle({ backgroundColor: '#5856eb' });
+    });
+    this.registerBtn.on('pointerout', () => {
+      this.input.setDefaultCursor('default');
+      this.registerBtn.setStyle({ backgroundColor: '#4f46e5' });
+    });
 
     // Popup panel (hidden default)
     const panel = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, 420, 280, 0x000000, 0.85)
