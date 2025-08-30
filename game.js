@@ -51,6 +51,17 @@ window.setPlayerIdentity = function ({ address, username }) {
   console.log("[Identity] address:", address, "username:", username);
 };
 
+// Helper function to show toast messages in game scene
+function showGameToast(scene, msg, color = '#ff6b6b') {
+  try {
+    const t = scene.add.text(scene.cameras.main.centerX, scene.cameras.main.centerY - 40,
+      msg, { fontFamily:'monospace', fontSize:'16px', color, backgroundColor: 'rgba(0,0,0,0.7)', padding: { x: 8, y: 4 } }).setOrigin(0.5).setDepth(10000);
+    scene.tweens.add({ targets:t, alpha:0, duration:2000, onComplete:() => t.destroy() });
+  } catch (err) {
+    console.log('Toast message:', msg);
+  }
+}
+
 // Enhanced boss defeat logic with server-side score submission
 function onBossDefeated(finalScore, gameDuration = 0) {
   // Check authentication from multiple sources
@@ -93,6 +104,14 @@ function onBossDefeated(finalScore, gameDuration = 0) {
   
   // Submit score increment via secure server API
   if (finalScore > 0) {
+    // Show submitting message to player
+    const gameScene = game.scene.getScene('Game');
+    if (gameScene) {
+      showGameToast(gameScene, "🚀 Submitting score to blockchain...", '#ffaa00');
+    }
+    
+    console.log("🚀 Submitting score to blockchain, please wait...");
+    
     submitScore(
       playerAddress,
       finalScore,      // Score increment (not total)
@@ -109,15 +128,21 @@ function onBossDefeated(finalScore, gameDuration = 0) {
         console.log("✅ Score successfully submitted to blockchain!");
         console.log("📜 Transaction hash:", result.transactionHash);
         
-        // Show leaderboard after successful submission
+        // Show success message
+        const gameScene = game.scene.getScene('Game');
+        if (gameScene) {
+          showGameToast(gameScene, "✅ Score submitted successfully!", '#55ff99');
+        }
+        
+        // Wait a moment for user to see success message, then transition
         setTimeout(() => {
-          // Get current scene instance
+          // NOW transition to leaderboard after successful submission
           const gameScene = game.scene.getScene('Game');
           if (gameScene) {
             // Switch to leaderboard with special flag indicating post-game state
             gameScene.scene.start('LeaderboardScene', { postGame: true, finalScore, gameDuration });
           }
-        }, 1000); // Short delay to show success message
+        }, 1500); // 1.5 second delay to show success message
         
         // Check for rank improvement after a short delay
         setTimeout(async () => {
@@ -134,10 +159,34 @@ function onBossDefeated(finalScore, gameDuration = 0) {
         
       } else {
         console.log("❌ Failed to submit score to blockchain");
+        // Show error message and still proceed to leaderboard
+        const gameScene = game.scene.getScene('Game');
+        if (gameScene) {
+          showGameToast(gameScene, "❌ Score submission failed, but you can still view leaderboard", '#ff6b6b');
+          // Wait a moment then show leaderboard anyway
+          setTimeout(() => {
+            gameScene.scene.start('LeaderboardScene', { postGame: true, finalScore, gameDuration });
+          }, 2000);
+        }
       }
     }).catch(err => {
       console.error("Error submitting score:", err);
+      // Show error message and still proceed to leaderboard
+      const gameScene = game.scene.getScene('Game');
+      if (gameScene) {
+        showGameToast(gameScene, "❌ Network error, but you can still view leaderboard", '#ff6b6b');
+        // Wait a moment then show leaderboard anyway
+        setTimeout(() => {
+          gameScene.scene.start('LeaderboardScene', { postGame: true, finalScore, gameDuration });
+        }, 2000);
+      }
     });
+  } else {
+    // No score to submit, go directly to leaderboard
+    const gameScene = game.scene.getScene('Game');
+    if (gameScene) {
+      gameScene.scene.start('LeaderboardScene', { postGame: true, finalScore, gameDuration });
+    }
   }
 }
 
