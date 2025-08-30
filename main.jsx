@@ -49,26 +49,7 @@ function AuthIsland() {
           <div style={{ fontSize: 12 }}>Wallet: {addr || "…"}</div>
           <div style={{ fontSize: 12 }}>Username: {uname || "(none)"}</div>
 
-          {/* TAMPILKAN REGISTER BUTTON JIKA USERNAME KOSONG */}
-          {addr && !uname && (
-            <a
-              href={`https://monad-games-id-site.vercel.app/`}
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                display: "inline-block",
-                marginTop: 8,
-                padding: "6px 10px",
-                background: "#4f46e5",
-                color: "#fff",
-                borderRadius: 6,
-                textDecoration: "none",
-                fontSize: 12
-              }}
-            >
-              Register Username
-            </a>
-          )}
+          {/* REMOVED: Register Username button to avoid UI overlap */}
 
           <button onClick={logout} style={{ marginTop: 6, marginLeft: 8 }}>Logout</button>
         </div>
