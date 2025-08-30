@@ -66,6 +66,9 @@ function showGameToast(scene, msg, color = '#ff6b6b') {
 function resetGameState() {
   console.log('🔄 Resetting game state for fresh start...');
   
+  // Stop any background music
+  stopBackgroundMusic();
+  
   // Reset HP and status
   playerHP = PLAYER_MAX_HP;
   bossHP = BOSS_MAX_HP;
@@ -249,10 +252,407 @@ const DEFAULT_SPAWN_NUDGE = 16;
 let isDead = false;
 let currentMapKey = 'town';
 
+// ===== BACKGROUND MUSIC SYSTEM =====
+let currentMusic = null;  // Currently playing music object
+let currentMusicKey = null;  // Track of current music for transitions
+
+// ===== VOLUME SETTINGS =====
+let gameSettings = {
+  musicVolume: 0.5,
+  sfxVolume: 0.5,
+  musicMuted: false,
+  sfxMuted: false
+};
+
+/**
+ * Get current volume settings from React or localStorage
+ * Always returns the most up-to-date settings
+ */
+function getCurrentVolumeSettings() {
+  // Priority 1: React settings (most current)
+  if (window.GAME_SETTINGS) {
+    return {
+      musicVolume: window.GAME_SETTINGS.musicVolume || 0.5,
+      sfxVolume: window.GAME_SETTINGS.sfxVolume || 0.5,
+      musicMuted: window.GAME_SETTINGS.musicMuted || false,
+      sfxMuted: window.GAME_SETTINGS.sfxMuted || false
+    };
+  }
+  
+  // Priority 2: localStorage settings
+  try {
+    return {
+      musicVolume: parseFloat(localStorage.getItem('game_music_volume') || '50') / 100,
+      sfxVolume: parseFloat(localStorage.getItem('game_sfx_volume') || '50') / 100,
+      musicMuted: localStorage.getItem('game_music_muted') === 'true',
+      sfxMuted: localStorage.getItem('game_sfx_muted') === 'true'
+    };
+  } catch (error) {
+    console.warn('⚠️ Error reading settings from localStorage:', error);
+  }
+  
+  // Priority 3: Default fallback
+  return gameSettings;
+}
+
 // Battle-only
 let mobs = null;              // group berisi 1 boss
 let fireballs = null;         // group fireball
 let nextBossShootAt = 0;      // cooldown tembak boss
+
+// ============ MUSIC MANAGEMENT ============
+
+/**
+ * Load volume settings from localStorage or defaults
+ */
+function loadVolumeSettings() {
+  gameSettings = getCurrentVolumeSettings();
+  console.log('🎚️ Loaded volume settings:', gameSettings);
+}
+
+/**
+ * Apply current volume settings to music and SFX
+ * @param {Phaser.Scene} scene - The current scene
+ */
+function applyVolumeSettings(scene) {
+  if (!scene) return;
+  
+  try {
+    // Get the most current settings
+    const currentSettings = getCurrentVolumeSettings();
+    
+    // Apply to currently playing music
+    if (currentMusic && currentMusic.setVolume) {
+      const musicVol = currentSettings.musicMuted ? 0 : currentSettings.musicVolume;
+      currentMusic.setVolume(musicVol);
+      console.log('🎵 Applied music volume to current track:', musicVol);
+    }
+    
+    // Apply to SFX objects if available
+    if (scene.sfx) {
+      const sfxVol = currentSettings.sfxMuted ? 0 : currentSettings.sfxVolume;
+      
+      Object.values(scene.sfx).forEach(sound => {
+        if (sound && sound.setVolume) {
+          sound.setVolume(sfxVol);
+        }
+      });
+      
+      console.log('🔊 Applied SFX volume to scene:', scene.scene.key, sfxVol);
+    }
+    
+    console.log('🎚️ Applied volume settings to scene');
+  } catch (error) {
+    console.warn('⚠️ Error applying volume settings:', error);
+  }
+}
+
+/**
+ * Listen for volume settings changes from React
+ */
+function setupVolumeSettingsListener() {
+  const handleSettingsChange = (event) => {
+    if (event.detail) {
+      // Update local settings
+      gameSettings = { ...gameSettings, ...event.detail };
+      console.log('🎚️ Volume settings updated in real-time:', gameSettings);
+      
+      // IMMEDIATELY update current music volume
+      updateMusicVolumeNow();
+      
+      // Apply to all active scenes' SFX immediately
+      updateAllSceneSFXVolume();
+    }
+  };
+  
+  window.addEventListener('game-settings-changed', handleSettingsChange);
+  
+  // Return cleanup function
+  return () => {
+    window.removeEventListener('game-settings-changed', handleSettingsChange);
+  };
+}
+
+/**
+ * Refresh volume settings for all active scenes
+ * Call this to force update volumes across the game
+ */
+function refreshAllSceneVolumes() {
+  console.log('🔄 Starting comprehensive volume refresh...');
+  
+  // Update music volume immediately
+  updateMusicVolumeNow();
+  
+  // Update SFX volume for all scenes
+  updateAllSceneSFXVolume();
+  
+  console.log('🔄 Volume refresh completed');
+}
+
+// Expose volume refresh function globally
+window.refreshAllSceneVolumes = refreshAllSceneVolumes;
+
+/**
+ * Play background music based on map/scene
+ * @param {Phaser.Scene} scene - The current scene
+ * @param {string} mapKey - Current map key ('town', 'battle', 'mainmenu')
+ */
+function playBackgroundMusic(scene, mapKey) {
+  if (!scene || !scene.sound) return;
+  
+  let targetMusicKey;
+  
+  // Determine which music to play
+  if (mapKey === 'battle') {
+    targetMusicKey = 'bossmapMusic';  // Boss battle music
+  } else {
+    // Main menu, town map, or any other map uses the main theme
+    targetMusicKey = 'mainMenuTownMusic';  // Main menu/town music
+  }
+  
+  // Don't restart the same music
+  if (currentMusicKey === targetMusicKey && currentMusic && currentMusic.isPlaying) {
+    console.log(`🎵 Music already playing: ${targetMusicKey}`);
+    // Apply current volume settings to existing music
+    applyVolumeSettings(scene);
+    return;
+  }
+  
+  // CRITICAL: Stop ALL music in the scene first
+  scene.sound.stopAll();
+  
+  // Stop current global music if playing
+  if (currentMusic && currentMusic.isPlaying) {
+    try {
+      currentMusic.stop();
+      currentMusic.destroy();
+    } catch (error) {
+      console.warn('⚠️ Error stopping current music:', error);
+    }
+  }
+  
+  // Clear references
+  currentMusic = null;
+  currentMusicKey = null;
+  
+  // Wait a brief moment to ensure cleanup, then start new music
+  scene.time.delayedCall(100, () => {
+    try {
+      if (scene.cache.audio.exists(targetMusicKey)) {
+        // Use the new playMusic function that works like playSFX!
+        const music = playMusic(scene, targetMusicKey);
+        
+        if (music) {
+          console.log(`🎵 Started background music: ${targetMusicKey} for map: ${mapKey} with real-time volume`);
+        } else {
+          console.warn(`⚠️ Failed to start music: ${targetMusicKey}`);
+        }
+        
+      } else {
+        console.warn(`⚠️ Audio not found: ${targetMusicKey}`);
+      }
+    } catch (error) {
+      console.warn(`⚠️ Could not play background music: ${targetMusicKey}`, error);
+    }
+  });
+}
+
+/**
+ * Stop all background music
+ */
+function stopBackgroundMusic() {
+  console.log('🔇 Stopping all background music...');
+  
+  // Stop current global music
+  if (currentMusic) {
+    try {
+      if (currentMusic.isPlaying) {
+        currentMusic.stop();
+      }
+      currentMusic.destroy();
+      console.log(`🔇 Stopped and destroyed music: ${currentMusicKey}`);
+    } catch (error) {
+      console.warn('⚠️ Error stopping music:', error);
+    }
+  }
+  
+  // Clear references
+  currentMusic = null;
+  currentMusicKey = null;
+  window.currentMusic = null;
+}
+
+/**
+ * Play SFX with volume settings applied
+ * @param {object} sfxObject - Phaser sound object
+ * @param {object} options - Play options (volume, loop, etc.)
+ */
+function playSFX(sfxObject, options = {}) {
+  if (!sfxObject) return;
+  
+  try {
+    // Always get CURRENT settings for real-time volume
+    const currentSettings = getCurrentVolumeSettings();
+    const currentSfxVol = currentSettings.sfxMuted ? 0 : currentSettings.sfxVolume;
+    const finalVolume = currentSfxVol * (options.volume || 1);
+    
+    sfxObject.play({
+      ...options,
+      volume: finalVolume
+    });
+    
+    console.log('🔊 Played SFX with real-time volume:', finalVolume);
+  } catch (error) {
+    console.warn('⚠️ Error playing SFX:', error);
+  }
+}
+
+/**
+ * Play Music with volume settings applied - EXACTLY LIKE SFX!
+ * @param {Phaser.Scene} scene - The current scene
+ * @param {string} musicKey - Music key to play
+ * @param {object} options - Play options (loop, etc.)
+ */
+function playMusic(scene, musicKey, options = {}) {
+  if (!scene || !scene.sound || !musicKey) return null;
+  
+  try {
+    // Stop existing music first
+    if (currentMusic && currentMusic.isPlaying) {
+      currentMusic.stop();
+      currentMusic.destroy();
+    }
+    
+    // Always get CURRENT settings for real-time volume
+    const currentSettings = getCurrentVolumeSettings();
+    const currentMusicVol = currentSettings.musicMuted ? 0 : currentSettings.musicVolume;
+    
+    // Create sound instance first, then set volume, then play (more stable lifecycle)
+    const sound = scene.sound.add(musicKey, {
+      loop: true,  // Music usually loops
+      ...options
+    });
+    
+    // Set volume on the instance
+    sound.setVolume(currentMusicVol);
+    
+    // Play the sound
+    sound.play();
+    
+    // Store references globally
+    currentMusic = sound;
+    currentMusicKey = musicKey;
+    window.currentMusic = sound;
+    
+    console.log('🎵 Played MUSIC with real-time volume:', currentMusicVol, 'for key:', musicKey);
+    return sound;
+  } catch (error) {
+    console.warn('⚠️ Error playing music:', error);
+    return null;
+  }
+}
+
+/**
+ * Update music volume in real-time - EXACTLY LIKE SFX!
+ */
+function updateMusicVolume() {
+  const currentSettings = getCurrentVolumeSettings();
+  const currentMusicVol = currentSettings.musicMuted ? 0 : currentSettings.musicVolume;
+  
+  if (currentMusic && currentMusic.setVolume) {
+    currentMusic.setVolume(currentMusicVol);
+    console.log('🎵 Updated music volume in real-time:', currentMusicVol);
+  }
+}
+
+/**
+ * Immediately update music volume with comprehensive approach
+ */
+function updateMusicVolumeNow() {
+  const currentSettings = getCurrentVolumeSettings();
+  const musicVol = currentSettings.musicMuted ? 0 : currentSettings.musicVolume;
+  
+  console.log('🎵 IMMEDIATE MUSIC VOLUME UPDATE:', musicVol);
+  
+  let musicUpdated = false;
+  
+  // Method 1: Direct currentMusic reference
+  if (currentMusic && currentMusic.setVolume) {
+    currentMusic.setVolume(musicVol);
+    console.log('🎵 Updated currentMusic directly:', musicVol);
+    musicUpdated = true;
+  }
+  
+  // Method 2: window.currentMusic reference
+  if (window.currentMusic && window.currentMusic.setVolume) {
+    window.currentMusic.setVolume(musicVol);
+    console.log('🎵 Updated window.currentMusic:', musicVol);
+    musicUpdated = true;
+  }
+  
+  // Method 3: Search through all active music in game sounds
+  if (window.game && window.game.sound && window.game.sound.sounds) {
+    window.game.sound.sounds.forEach((sound, index) => {
+      if (sound.key === 'mainMenuTownMusic' || sound.key === 'bossmapMusic') {
+        if (sound.isPlaying && sound.setVolume) {
+          sound.setVolume(musicVol);
+          console.log('🎵 Updated active music via game.sound:', sound.key, musicVol);
+          musicUpdated = true;
+        }
+      }
+    });
+  }
+  
+  // Method 4: Search through all active scenes
+  if (window.game && window.game.scene) {
+    const activeScenes = window.game.scene.getScenes(true);
+    activeScenes.forEach(scene => {
+      if (scene.sound && scene.sound.sounds) {
+        scene.sound.sounds.forEach((sound) => {
+          if ((sound.key === 'mainMenuTownMusic' || sound.key === 'bossmapMusic') && sound.isPlaying && sound.setVolume) {
+            sound.setVolume(musicVol);
+            console.log('🎵 Updated scene music:', scene.scene.key, sound.key, musicVol);
+            musicUpdated = true;
+          }
+        });
+      }
+    });
+  }
+  
+  if (!musicUpdated) {
+    console.warn('⚠️ No active music found to update volume');
+  }
+}
+
+/**
+ * Update SFX volume for all active scenes
+ */
+function updateAllSceneSFXVolume() {
+  const currentSettings = getCurrentVolumeSettings();
+  const sfxVol = currentSettings.sfxMuted ? 0 : currentSettings.sfxVolume;
+  
+  if (window.game && window.game.scene) {
+    const activeScenes = window.game.scene.getScenes(true);
+    activeScenes.forEach(scene => {
+      if (scene.sfx) {
+        Object.values(scene.sfx).forEach(sound => {
+          if (sound && sound.setVolume) {
+            sound.setVolume(sfxVol);
+          }
+        });
+        console.log('🔊 Updated SFX volume for scene:', scene.scene.key, sfxVol);
+      }
+    });
+  }
+}
+
+// Expose functions globally for other scenes to use
+window.playSFX = playSFX;
+window.playMusic = playMusic;
+window.updateMusicVolume = updateMusicVolume;
+window.updateMusicVolumeNow = updateMusicVolumeNow;
+window.getCurrentVolumeSettings = getCurrentVolumeSettings;
+window.refreshAllSceneVolumes = refreshAllSceneVolumes;
 
 // ======= ATTACK (Single-key F + 3-hit combo) =======
 let attackKeyF = null;
@@ -543,6 +943,10 @@ function preload() {
     this.load.audio('basicAttack','assets/sfx/basicattack.wav');
     this.load.audio('success',    'assets/sfx/Success.wav');
     this.load.audio('uiClick',    'assets/sfx/UI-Click.wav');
+    
+    // Background Music
+    this.load.audio('mainMenuTownMusic', 'assets/sfx/Main Menu-Town.mp3');
+    this.load.audio('bossmapMusic', 'assets/sfx/bossmap.mp3');
   } catch {}
 }
 
@@ -619,6 +1023,32 @@ function create(data) {
     success:     this.sound.add('success'),
     uiClick:     this.sound.add('uiClick')
   };
+  
+  // Load volume settings and apply to SFX
+  loadVolumeSettings();
+  applyVolumeSettings(this);
+  
+  // Set up volume settings listener (only once)
+  if (!window.volumeListenerSetup) {
+    setupVolumeSettingsListener();
+    window.volumeListenerSetup = true;
+  }
+  
+  // --- Background Music Setup ---
+  try {
+    // Ensure music objects are created (they may already exist from preload)
+    if (!this.sound.get('mainMenuTownMusic') && this.cache.audio.exists('mainMenuTownMusic')) {
+      this.sound.add('mainMenuTownMusic');
+    }
+    if (!this.sound.get('bossmapMusic') && this.cache.audio.exists('bossmapMusic')) {
+      this.sound.add('bossmapMusic');
+    }
+  } catch (error) {
+    console.warn('⚠️ Could not setup background music objects:', error);
+  }
+  
+  // Start appropriate background music for this map
+  playBackgroundMusic(this, mapKey);
 
   // Collider dinding
   const wallsLayer = mapLayers['Walls'] || mapLayers['object wall'] || null;
@@ -802,12 +1232,19 @@ function create(data) {
   this.input.keyboard.on('keydown-ESC', () => {
     taStop(this, { submit: false });
     TA_call('destroy', this);
-    try { this.sfx?.uiClick?.play?.(); } catch {}
+    try { playSFX(this.sfx?.uiClick); } catch {}
+    
+    // Stop game music before returning to main menu
+    stopBackgroundMusic();
+    
     this.scene.start('MainMenu');
   });
 
   // Cleanup saat scene ditutup
   this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+    // Stop background music when leaving game scene
+    stopBackgroundMusic();
+    
     // Matikan efek dodge outline
     if (dodgeOutlinePulse) { try { dodgeOutlinePulse.stop(); } catch {} dodgeOutlinePulse = null; }
     dodgeOutline.forEach(s => { try { s.destroy(); } catch {} });
@@ -819,6 +1256,8 @@ function create(data) {
     try { uiTextPlayer?.destroy(); } catch {}
     try { playerUsernameText?.destroy(); } catch {}
     uiTextTimer = null; uiGfx = null; uiTextPlayer = null; playerUsernameText = null;
+    
+    console.log('🔇 Game Scene: Cleaned up music and UI on shutdown');
   });
 }
 
@@ -857,7 +1296,7 @@ function update() {
   const speed = shiftKey?.isDown ? 200 : 120;
 
   if (!isDodging && Phaser.Input.Keyboard.JustDown(attackKeyF)) {
-    try { this.sfx?.basicAttack?.play?.(); } catch {}
+    try { playSFX(this.sfx?.basicAttack); } catch {}
     doComboAttack(this);
   }
 
@@ -1632,7 +2071,7 @@ function damagePlayer(amount) {
   refreshUI();
 
   if (playerHP > 0) {
-    try { player.scene.sfx?.hitSound?.play?.(); } catch {}
+    try { playSFX(player.scene.sfx?.hitSound); } catch {}
     player.setTintFill(0xffffff);
     player.scene.time.delayedCall(50, () => player.clearTint());
   } else {
@@ -1656,7 +2095,11 @@ function killPlayer(scene) {
   if (scene.anims.exists(key)) { player.anims.timeScale = 1; player.play(key); }
 
   // play death sfx once
-  try { if (!scene.sfx?.heroDead?.isPlaying) scene.sfx?.heroDead?.play?.(); } catch {}
+  try { 
+    if (!scene.sfx?.heroDead?.isPlaying) {
+      playSFX(scene.sfx?.heroDead);
+    }
+  } catch {}
 
   scene.tweens.add({ targets: player, alpha: { from: 1, to: 0.3 }, duration: 600, ease: 'Quad.easeOut' });
 
@@ -1787,7 +2230,7 @@ function castRocketSkill(scene) {
   if (now < nextRocketAt) return false;
   nextRocketAt = now + ROCKET_CD_MS;
 
-  try { scene.sfx?.rocketSkill?.play?.(); } catch {}
+  try { playSFX(scene.sfx?.rocketSkill); } catch {}
 
   // Sedikit anim serang biar ada feedback
   const dir = playerLastDir;

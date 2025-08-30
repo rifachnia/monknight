@@ -113,6 +113,14 @@ class PreloadScene extends Phaser.Scene {
     this.load.spritesheet('hero',     'assets/hero.png',     { frameWidth: 64, frameHeight: 64 });
     this.load.spritesheet('skeleton', 'assets/skeleton.png', { frameWidth: 32, frameHeight: 32 });
 
+    // Background Music
+    try {
+      this.load.audio('mainMenuTownMusic', 'assets/sfx/Main Menu-Town.mp3');
+      this.load.audio('bossmapMusic', 'assets/sfx/bossmap.mp3');
+    } catch (error) {
+      console.warn('⚠️ Could not load background music in PreloadScene:', error);
+    }
+
     // (opsional) audio/ui
     // this.load.audio('sfx_click', ['assets/audio/click.ogg', 'assets/audio/click.mp3']);
   }

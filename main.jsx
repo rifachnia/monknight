@@ -5,6 +5,340 @@ import { PrivyProvider, usePrivy, useCrossAppAccounts } from "@privy-io/react-au
 
 console.log('🚀 main.jsx loading...');
 
+// Settings Component for Volume Controls
+function SettingsMenu() {
+  const [isOpen, setIsOpen] = useState(false);
+  const [musicVolume, setMusicVolume] = useState(50);
+  const [sfxVolume, setSfxVolume] = useState(50);
+  const [musicMuted, setMusicMuted] = useState(false);
+  const [sfxMuted, setSfxMuted] = useState(false);
+
+  // Load settings from localStorage on component mount
+  useEffect(() => {
+    const savedSettings = {
+      musicVolume: parseInt(localStorage.getItem('game_music_volume') || '50'),
+      sfxVolume: parseInt(localStorage.getItem('game_sfx_volume') || '50'),
+      musicMuted: localStorage.getItem('game_music_muted') === 'true',
+      sfxMuted: localStorage.getItem('game_sfx_muted') === 'true'
+    };
+    
+    console.log('🎚️ Loading saved volume settings:', savedSettings);
+    
+    setMusicVolume(savedSettings.musicVolume);
+    setSfxVolume(savedSettings.sfxVolume);
+    setMusicMuted(savedSettings.musicMuted);
+    setSfxMuted(savedSettings.sfxMuted);
+    
+    // Apply settings to game immediately on load
+    applyVolumeSettings(savedSettings);
+    
+    // Also force refresh if game is already loaded
+    setTimeout(() => {
+      if (window.refreshAllSceneVolumes) {
+        console.log('🔄 Initial volume refresh triggered');
+        window.refreshAllSceneVolumes();
+      }
+    }, 500);
+  }, []);
+
+  // Apply volume settings to Phaser game
+  const applyVolumeSettings = (settings) => {
+    try {
+      // Calculate volume values
+      const musicVol = settings.musicMuted ? 0 : settings.musicVolume / 100;
+      const sfxVol = settings.sfxMuted ? 0 : settings.sfxVolume / 100;
+      
+      // Store volume settings globally for game to use
+      window.GAME_SETTINGS = {
+        musicVolume: musicVol,
+        sfxVolume: sfxVol,
+        musicMuted: settings.musicMuted,
+        sfxMuted: settings.sfxMuted
+      };
+      
+      console.log('🎚️ Applying volume settings from React:', {
+        musicVol,
+        sfxVol,
+        musicMuted: settings.musicMuted,
+        sfxMuted: settings.sfxMuted
+      });
+      
+      // Apply to currently playing music immediately - USE NEW FUNCTION LIKE SFX!
+      console.log('🔍 Applying music volume using updateMusicVolumeNow function...');
+      
+      // Use the new updateMusicVolumeNow function for immediate update
+      if (window.updateMusicVolumeNow) {
+        window.updateMusicVolumeNow();
+        console.log('🎵 Used updateMusicVolumeNow function');
+      } else {
+        console.warn('⚠️ updateMusicVolumeNow function not available yet');
+      }
+      
+      // Apply to all current SFX objects in active scenes
+      if (window.game && window.game.scene) {
+        const activeScenes = window.game.scene.getScenes(true); // Get active scenes
+        activeScenes.forEach(scene => {
+          if (scene.sfx) {
+            Object.values(scene.sfx).forEach(sound => {
+              if (sound && sound.setVolume) {
+                sound.setVolume(sfxVol);
+              }
+            });
+            console.log('🔊 Applied SFX volume to scene:', scene.scene.key, sfxVol);
+          }
+        });
+      }
+      
+      // Dispatch event for game to listen
+      window.dispatchEvent(new CustomEvent('game-settings-changed', {
+        detail: window.GAME_SETTINGS
+      }));
+      
+      console.log('🎚️ Applied volume settings in real-time:', window.GAME_SETTINGS);
+    } catch (error) {
+      console.warn('⚠️ Error applying volume settings:', error);
+    }
+  };
+
+  const handleMusicVolumeChange = (value) => {
+    const vol = parseInt(value);
+    setMusicVolume(vol);
+    localStorage.setItem('game_music_volume', vol.toString());
+    const newSettings = { musicVolume: vol, sfxVolume, musicMuted, sfxMuted };
+    applyVolumeSettings(newSettings);
+    
+    // Use the new updateMusicVolumeNow function for immediate update
+    if (window.updateMusicVolumeNow) {
+      // Small delay to ensure settings are synced
+      setTimeout(() => window.updateMusicVolumeNow(), 50);
+    }
+  };
+
+  const handleSfxVolumeChange = (value) => {
+    const vol = parseInt(value);
+    setSfxVolume(vol);
+    localStorage.setItem('game_sfx_volume', vol.toString());
+    const newSettings = { musicVolume, sfxVolume: vol, musicMuted, sfxMuted };
+    applyVolumeSettings(newSettings);
+    
+    // Force immediate refresh of all scenes
+    if (window.refreshAllSceneVolumes) {
+      window.refreshAllSceneVolumes();
+    }
+  };
+
+  const handleMusicMute = () => {
+    const muted = !musicMuted;
+    setMusicMuted(muted);
+    localStorage.setItem('game_music_muted', muted.toString());
+    const newSettings = { musicVolume, sfxVolume, musicMuted: muted, sfxMuted };
+    applyVolumeSettings(newSettings);
+    
+    // Use the new updateMusicVolumeNow function for immediate update
+    if (window.updateMusicVolumeNow) {
+      // Small delay to ensure settings are synced
+      setTimeout(() => window.updateMusicVolumeNow(), 50);
+    }
+  };
+
+  const handleSfxMute = () => {
+    const muted = !sfxMuted;
+    setSfxMuted(muted);
+    localStorage.setItem('game_sfx_muted', muted.toString());
+    const newSettings = { musicVolume, sfxVolume, musicMuted, sfxMuted: muted };
+    applyVolumeSettings(newSettings);
+    
+    // Force immediate refresh of all scenes
+    if (window.refreshAllSceneVolumes) {
+      window.refreshAllSceneVolumes();
+    }
+  };
+
+  return (
+    <>
+      {/* Settings Gear Icon */}
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          width: '40px',
+          height: '40px',
+          background: 'rgba(0, 0, 0, 0.8)',
+          border: '2px solid #4f46e5',
+          borderRadius: '50%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          zIndex: 10001,
+          transition: 'all 0.2s ease',
+          fontSize: '18px'
+        }}
+        onMouseOver={(e) => {
+          e.target.style.background = 'rgba(79, 70, 229, 0.8)';
+          e.target.style.transform = 'rotate(45deg)';
+        }}
+        onMouseOut={(e) => {
+          e.target.style.background = 'rgba(0, 0, 0, 0.8)';
+          e.target.style.transform = 'rotate(0deg)';
+        }}
+      >
+        ⚙️
+      </div>
+
+      {/* Settings Panel */}
+      {isOpen && (
+        <>
+          {/* Backdrop */}
+          <div 
+            onClick={() => setIsOpen(false)}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100vw',
+              height: '100vh',
+              background: 'rgba(0, 0, 0, 0.5)',
+              zIndex: 10002
+            }}
+          />
+          
+          {/* Settings Menu */}
+          <div style={{
+            position: 'fixed',
+            top: '70px',
+            right: '20px',
+            width: '320px',
+            background: 'rgba(0, 0, 0, 0.95)',
+            border: '2px solid #4f46e5',
+            borderRadius: '12px',
+            padding: '20px',
+            color: '#ffffff',
+            fontFamily: 'monospace',
+            fontSize: '14px',
+            zIndex: 10003,
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.8)'
+          }}>
+            <h3 style={{ margin: '0 0 20px 0', color: '#4f46e5', textAlign: 'center' }}>Game Settings</h3>
+            
+            {/* Music Volume */}
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ flex: 1 }}>Music Volume:</span>
+                <button 
+                  onClick={handleMusicMute}
+                  style={{
+                    padding: '4px 8px',
+                    background: musicMuted ? '#dc2626' : '#16a34a',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    marginLeft: '10px'
+                  }}
+                >
+                  {musicMuted ? '🔇 Muted' : '🔊 On'}
+                </button>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '12px', color: '#888' }}>0%</span>
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="100" 
+                  value={musicVolume}
+                  onChange={(e) => handleMusicVolumeChange(e.target.value)}
+                  disabled={musicMuted}
+                  style={{
+                    flex: 1,
+                    height: '6px',
+                    background: musicMuted ? '#444' : '#4f46e5',
+                    borderRadius: '3px',
+                    outline: 'none',
+                    cursor: musicMuted ? 'not-allowed' : 'pointer'
+                  }}
+                />
+                <span style={{ fontSize: '12px', color: '#888' }}>100%</span>
+              </div>
+              <div style={{ textAlign: 'center', marginTop: '4px', fontSize: '12px', color: '#ccc' }}>
+                {musicMuted ? 'Muted' : `${musicVolume}%`}
+              </div>
+            </div>
+
+            {/* SFX Volume */}
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ flex: 1 }}>SFX Volume:</span>
+                <button 
+                  onClick={handleSfxMute}
+                  style={{
+                    padding: '4px 8px',
+                    background: sfxMuted ? '#dc2626' : '#16a34a',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    marginLeft: '10px'
+                  }}
+                >
+                  {sfxMuted ? '🔇 Muted' : '🔊 On'}
+                </button>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '12px', color: '#888' }}>0%</span>
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="100" 
+                  value={sfxVolume}
+                  onChange={(e) => handleSfxVolumeChange(e.target.value)}
+                  disabled={sfxMuted}
+                  style={{
+                    flex: 1,
+                    height: '6px',
+                    background: sfxMuted ? '#444' : '#4f46e5',
+                    borderRadius: '3px',
+                    outline: 'none',
+                    cursor: sfxMuted ? 'not-allowed' : 'pointer'
+                  }}
+                />
+                <span style={{ fontSize: '12px', color: '#888' }}>100%</span>
+              </div>
+              <div style={{ textAlign: 'center', marginTop: '4px', fontSize: '12px', color: '#ccc' }}>
+                {sfxMuted ? 'Muted' : `${sfxVolume}%`}
+              </div>
+            </div>
+
+            {/* Close Button */}
+            <button 
+              onClick={() => setIsOpen(false)}
+              style={{
+                width: '100%',
+                padding: '10px',
+                background: '#4f46e5',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '14px',
+                cursor: 'pointer',
+                fontFamily: 'monospace'
+              }}
+              onMouseOver={(e) => e.target.style.background = '#6366f1'}
+              onMouseOut={(e) => e.target.style.background = '#4f46e5'}
+            >
+              Close Settings
+            </button>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 function AuthIsland() {
   const { authenticated, user, ready, login, logout } = usePrivy();
   const { loginWithCrossAppAccount } = useCrossAppAccounts();
@@ -242,6 +576,9 @@ function AuthIsland() {
 
   return (
     <>
+      {/* Settings Menu */}
+      <SettingsMenu />
+      
       {/* Debug indicator */}
       <div style={{ 
         position: 'fixed', 

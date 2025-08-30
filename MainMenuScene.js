@@ -1,6 +1,40 @@
 // ============ MAIN MENU SCENE ============
 import { timeAttack } from './time_attack.js';
 
+// ============ MUSIC MANAGEMENT ============
+/**
+ * Play background music for main menu
+ * @param {Phaser.Scene} scene - The current scene
+ */
+function playMainMenuMusic(scene) {
+  if (!scene || !scene.sound) return null;
+  
+  try {
+    // CRITICAL: Stop ALL existing music first
+    scene.sound.stopAll();
+    console.log('🔇 Stopped all existing music in MainMenu');
+    
+    // Play music SYNCHRONOUSLY (no delayedCall!) and return the object
+    if (scene.cache.audio.exists('mainMenuTownMusic')) {
+      const music = window.playMusic(scene, 'mainMenuTownMusic'); // Must use playMusic
+      
+      if (music) {
+        console.log('🎵 Started Main Menu background music with real-time volume');
+        // Immediately sync with current volume settings
+        if (window.updateMusicVolumeNow) {
+          window.updateMusicVolumeNow();
+        }
+      }
+      return music; // Return actual sound object, not null!
+    } else {
+      console.warn('⚠️ mainMenuTownMusic not found in cache');
+    }
+  } catch (error) {
+    console.warn('⚠️ Could not play main menu music:', error);
+  }
+  return null;
+}
+
 export default class MainMenuScene extends Phaser.Scene {
   constructor() {
     super({ key: 'MainMenu' });
@@ -14,6 +48,14 @@ export default class MainMenuScene extends Phaser.Scene {
   preload() {
     // Load background image if available
     this.load.image('mainmenu', 'assets/mainmenu.png');
+    
+    // Load background music
+    try {
+      this.load.audio('mainMenuTownMusic', 'assets/sfx/Main Menu-Town.mp3');
+      this.load.audio('bossmapMusic', 'assets/sfx/bossmap.mp3');
+    } catch (error) {
+      console.warn('⚠️ Could not load background music in MainMenu:', error);
+    }
   }
 
   create() {
@@ -21,6 +63,9 @@ export default class MainMenuScene extends Phaser.Scene {
     window.dispatchEvent(new CustomEvent('phaser-scene-change', {
       detail: { scene: 'MainMenuScene' }
     }));
+    
+    // Start background music for main menu and store the reference
+    this.backgroundMusic = playMainMenuMusic(this);
     
     const centerX = this.cameras.main.centerX;
     const centerY = this.cameras.main.centerY;
@@ -157,6 +202,12 @@ export default class MainMenuScene extends Phaser.Scene {
         this.showToast?.('Please login first', '#ff6b6b');
         return;
       }
+      
+      // Stop main menu music before transitioning to leaderboard
+      if (this.backgroundMusic && this.backgroundMusic.isPlaying) {
+        this.backgroundMusic.stop();
+      }
+      
       this.scene.start('LeaderboardScene');
     });
 
@@ -373,6 +424,17 @@ export default class MainMenuScene extends Phaser.Scene {
 
   // Cleanup event listeners when scene is destroyed
   destroy() {
+    // Stop background music when leaving main menu
+    if (this.backgroundMusic && this.backgroundMusic.isPlaying) {
+      try {
+        this.backgroundMusic.stop();
+        this.backgroundMusic.destroy();
+        console.log('🔇 MainMenu: Stopped music on scene destroy');
+      } catch (error) {
+        console.warn('⚠️ Error stopping MainMenu music:', error);
+      }
+    }
+    
     // Clean up authentication event handlers
     window.removeEventListener('monknight-auth', this.handleAuthChange);
     
@@ -383,12 +445,17 @@ export default class MainMenuScene extends Phaser.Scene {
       });
     }
     
-    console.log('🧹 MainMenuScene: Cleaned up event listeners');
+    console.log('🧹 MainMenuScene: Cleaned up event listeners and music');
     super.destroy();
   }
 
   // Helper methods
   startGame() {
+    // Stop main menu music before transitioning
+    if (this.backgroundMusic && this.backgroundMusic.isPlaying) {
+      this.backgroundMusic.stop();
+    }
+    
     // Start fresh game in town map with full reset
     this.scene.start('Game', { 
       mapKey: 'town', 
@@ -434,14 +501,34 @@ export default class MainMenuScene extends Phaser.Scene {
     }).setOrigin(0.5).setInteractive().setVisible(false).setDepth(1001);
 
     howToPlayText.on('pointerdown', () => {
-      try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
+      try { 
+        const gameScene = this.scene.get('Game');
+        if (gameScene?.sfx?.uiClick) {
+          // Use playSFX if available, fallback to direct play
+          if (window.playSFX) {
+            window.playSFX(gameScene.sfx.uiClick);
+          } else {
+            gameScene.sfx.uiClick.play();
+          }
+        }
+      } catch {}
       panel.setVisible(true);
       instructions.setVisible(true);
       closeText.setVisible(true);
     });
 
     closeText.on('pointerdown', () => {
-      try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
+      try { 
+        const gameScene = this.scene.get('Game');
+        if (gameScene?.sfx?.uiClick) {
+          // Use playSFX if available, fallback to direct play
+          if (window.playSFX) {
+            window.playSFX(gameScene.sfx.uiClick);
+          } else {
+            gameScene.sfx.uiClick.play();
+          }
+        }
+      } catch {}
       panel.setVisible(false);
       instructions.setVisible(false);
       closeText.setVisible(false);

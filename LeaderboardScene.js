@@ -2,6 +2,40 @@
 import { timeAttack } from './time_attack.js';
 import { getPlayerAddress } from './contract.js';
 
+// ============ MUSIC MANAGEMENT ============
+/**
+ * Play background music for leaderboard (uses main menu theme)
+ * @param {Phaser.Scene} scene - The current scene
+ */
+function playLeaderboardMusic(scene) {
+  if (!scene || !scene.sound) return null;
+  
+  try {
+    // CRITICAL: Stop ALL existing music first
+    scene.sound.stopAll();
+    console.log('🔇 Stopped all existing music in Leaderboard');
+    
+    // Play music SYNCHRONOUSLY (no delayedCall!) and return the object
+    if (scene.cache.audio.exists('mainMenuTownMusic')) {
+      const music = window.playMusic(scene, 'mainMenuTownMusic'); // Must use playMusic
+      
+      if (music) {
+        console.log('🎵 Started Leaderboard background music with real-time volume');
+        // Immediately sync with current volume settings
+        if (window.updateMusicVolumeNow) {
+          window.updateMusicVolumeNow();
+        }
+      }
+      return music; // Return actual sound object, not null!
+    } else {
+      console.warn('⚠️ mainMenuTownMusic not found in cache');
+    }
+  } catch (error) {
+    console.warn('⚠️ Could not play leaderboard music:', error);
+  }
+  return null;
+}
+
 // Utility aman panggil modul TA
 function TA_call(methodName, ...args) {
   try {
@@ -58,6 +92,9 @@ export default class LeaderboardScene extends Phaser.Scene {
     window.dispatchEvent(new CustomEvent('phaser-scene-change', {
       detail: { scene: 'LeaderboardScene' }
     }));
+    
+    // Start background music for leaderboard (uses main menu theme) and store the reference
+    this.backgroundMusic = playLeaderboardMusic(this);
     
     // Store data for post-game handling
     this.postGame = data?.postGame || false;
@@ -298,5 +335,22 @@ export default class LeaderboardScene extends Phaser.Scene {
       btn.on('pointerout',  () => btn.setFillStyle(0x123456, 0.8));
       btn.on('pointerup',   () => this.scene.start('MainMenu'));
     }
+  }
+  
+  // Cleanup when scene is destroyed
+  destroy() {
+    try {
+      // Stop background music
+      if (this.backgroundMusic && this.backgroundMusic.isPlaying) {
+        this.backgroundMusic.stop();
+        this.backgroundMusic.destroy();
+        console.log('🔇 Leaderboard: Stopped music on scene destroy');
+      }
+    } catch (error) {
+      console.warn('⚠️ Error cleaning up Leaderboard music:', error);
+    }
+    
+    // Call parent destroy
+    super.destroy();
   }
 }
