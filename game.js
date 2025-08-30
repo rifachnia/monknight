@@ -62,6 +62,48 @@ function showGameToast(scene, msg, color = '#ff6b6b') {
   }
 }
 
+// Reset all game state variables for a fresh start
+function resetGameState() {
+  console.log('🔄 Resetting game state for fresh start...');
+  
+  // Reset HP and status
+  playerHP = PLAYER_MAX_HP;
+  bossHP = BOSS_MAX_HP;
+  isDead = false;
+  isInvulnerable = false;
+  
+  // Reset map to town (starting map)
+  currentMapKey = 'town';
+  
+  // Reset combat state
+  isAttacking = false;
+  attackCD = false;
+  comboIndex = 0;
+  lastAttackAt = 0;
+  
+  // Reset dodge state
+  isDodging = false;
+  dodgeOnCD = false;
+  
+  // Reset portal state
+  isTransitioning = false;
+  portalsEnabled = false;
+  portalCooldownUntil = 0;
+  
+  // Reset boss shooting
+  nextBossShootAt = 0;
+  nextRocketAt = 0;
+  nextContactTickAt = 0;
+  
+  // Reset boss phase
+  minionsSummoned = false;
+  
+  // Reset time attack timer
+  taStartMs = 0;
+  
+  console.log('✅ Game state reset complete!');
+}
+
 // Enhanced boss defeat logic with server-side score submission
 function onBossDefeated(finalScore, gameDuration = 0) {
   // Check authentication from multiple sources
@@ -511,6 +553,12 @@ function create(data) {
     detail: { scene: 'Game' }
   }));
   
+  // Reset game state for fresh start if this is a new game
+  const isNewGame = data?.resetState !== false; // Default to true unless explicitly false
+  if (isNewGame) {
+    resetGameState();
+  }
+  
   // Pastikan seluruh tileset untuk town/battle tersedia
   const needKeys = ['town', 'battle'];
   for (const key of needKeys) {
@@ -709,7 +757,7 @@ function create(data) {
           const elapsed = stopAndGetElapsed(this);
           onBossDefeated(calcPointsFromTime(elapsed), elapsed); // Pass duration for validation
           TA_call('submitToLeaderboard', elapsed, { reason: 'kill_boss' });
-          showWinOverlay(this, elapsed);
+          // showWinOverlay removed - now handled by onBossDefeated with proper leaderboard flow
         }
 
         const deathKey = `${mob.animPrefix || (mob.isBoss ? 'mob' : 'minion')}_death`;
@@ -1193,7 +1241,7 @@ function doComboAttack(scene) {
           const elapsed = stopAndGetElapsed(scene);
           onBossDefeated(calcPointsFromTime(elapsed), elapsed); // Pass duration for validation
           TA_call('submitToLeaderboard', elapsed, { reason: 'kill_boss' });
-          showWinOverlay(scene, elapsed);
+          // showWinOverlay removed - now handled by onBossDefeated with proper leaderboard flow
         }
 
         const deathKey = `${mob.animPrefix || (mob.isBoss ? 'mob' : 'minion')}_death`;
@@ -1550,40 +1598,7 @@ function formatTime(ms) {
   return `${pad(m)}:${pad(s)}.${pad(cs)}`;
 }
 
-// Helper: banner kemenangan + submit
-function showWinOverlay(scene, elapsedMs) {
-  // Panel sederhana di tengah
-  const w = scene.scale.width, h = scene.scale.height;
-  const gfx = scene.add.graphics().setScrollFactor(0).setDepth(10001);
-  gfx.fillStyle(0x000000, 0.55).fillRoundedRect(w*0.5-180, h*0.5-70, 360, 140, 12);
-  gfx.lineStyle(2, 0xffffff, 0.95).strokeRoundedRect(w*0.5-180, h*0.5-70, 360, 140, 12);
-
-  // Check if this is a new best time
-  const best = TA_call('getBestLocal');
-  const isBest = (typeof best === 'number') ? (elapsedMs < best) : true;
-  
-  const titleText = isBest ? 'NEW BEST!' : 'VICTORY!';
-  const titleColor = isBest ? '#ffd700' : '#a3ff8f';
-
-  const t1 = scene.add.text(w*0.5, h*0.5-24, titleText, {
-    fontFamily: 'monospace', fontSize: 28, color: titleColor
-  }).setScrollFactor(0).setDepth(10002).setOrigin(0.5, 0.5);
-
-  const t2 = scene.add.text(w*0.5, h*0.5+16, `Time: ${formatTime(elapsedMs)}`, {
-    fontFamily: 'monospace', fontSize: 20, color: '#ffe066'
-  }).setScrollFactor(0).setDepth(10002).setOrigin(0.5, 0.5);
-
-  // balik ke menu setelah 1.6 detik
-  scene.time.delayedCall(1600, () => {
-    try { gfx.destroy(); t1.destroy(); t2.destroy(); } catch {}
-    scene.scene.start('MainMenu'); // atau restart map battle, terserah flow kamu
-  });
-
-  // Play success SFX only if new best
-  if (isBest) {
-    try { scene.sfx?.success?.play?.(); } catch {}
-  }
-}
+// Win overlay function removed - replaced with proper leaderboard flow in onBossDefeated
 
 // Util: stop TA + ambil elapsed yang aman
 function stopAndGetElapsed(scene) {

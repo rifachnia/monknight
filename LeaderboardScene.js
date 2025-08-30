@@ -263,8 +263,12 @@ export default class LeaderboardScene extends Phaser.Scene {
       restartBtn.on('pointerover', () => restartBtn.setFillStyle(0x3fa843, 0.9));
       restartBtn.on('pointerout',  () => restartBtn.setFillStyle(0x2d8a2f, 0.8));
       restartBtn.on('pointerup', () => {
-        // Same as clicking START GAME in main menu - start the game scene in battle mode
-        this.scene.start('Game', { mapKey: 'battle', spawn: { x: 160, y: 350 } });
+        // Start fresh game in town map (same as main menu START GAME)
+        this.scene.start('Game', { 
+          mapKey: 'town', 
+          spawn: { x: 160, y: 224 }, 
+          resetState: true 
+        });
       });
       
       // Return to Main Menu button (right)

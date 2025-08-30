@@ -389,16 +389,12 @@ export default class MainMenuScene extends Phaser.Scene {
 
   // Helper methods
   startGame() {
-    // Coba beberapa key scene umum; kalau tidak ketemu, auto-pilih non-menu
-    const tryKeys = ['GameScene','MainScene','SceneMain','Game','BattleScene'];
-    for (const k of tryKeys) {
-      try { if (this.scene.get(k)) { this.scene.start(k); return; } } catch (e) {}
-    }
-    // fallback: pilih scene pertama yang bukan preload/menu/leaderboard
-    const all = this.game.scene.scenes.map(s => s.sys.settings.key);
-    const target = all.find(k => !/menu|preload|leader/i.test(k));
-    if (target) this.scene.start(target);
-    else console.warn('No game scene found. Available:', all);
+    // Start fresh game in town map with full reset
+    this.scene.start('Game', { 
+      mapKey: 'town', 
+      spawn: { x: 160, y: 224 }, 
+      resetState: true 
+    });
   }
 
   showToast(msg, color = '#ff6b6b') {
