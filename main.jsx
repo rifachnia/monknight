@@ -29,16 +29,43 @@ function AuthIsland() {
         const j = await r.json();
         const username = j?.username || "";
         setUname(username);
-        // publish ke game:
+        // Store in localStorage for game compatibility
+        localStorage.setItem('mgid_user', username || address);
+        // publish to game:
         window.MONKNIGHT_AUTH = { address, username };
-        window.dispatchEvent(new CustomEvent("monknight-auth", { detail: { address, username } }));
+        window.dispatchEvent(new CustomEvent("monknight-auth", { 
+          detail: { authenticated: true, address, username } 
+        }));
       } catch (e) {
         console.error("check-wallet failed:", e);
+        localStorage.setItem('mgid_user', address);
         window.MONKNIGHT_AUTH = { address, username: "" };
-        window.dispatchEvent(new CustomEvent("monknight-auth", { detail: { address, username: "" } }));
+        window.dispatchEvent(new CustomEvent("monknight-auth", { 
+          detail: { authenticated: true, address, username: "" } 
+        }));
       }
     })();
   }, [authenticated, user, ready]);
+
+  // Expose login/logout functions globally for game to use
+  React.useEffect(() => {
+    window.privyLogin = login;
+    window.privyLogout = logout;
+    
+    // Clear auth state when not authenticated
+    if (!authenticated) {
+      localStorage.removeItem('mgid_user');
+      window.MONKNIGHT_AUTH = null;
+      window.dispatchEvent(new CustomEvent("monknight-auth", { 
+        detail: { authenticated: false, address: null, username: null } 
+      }));
+    }
+    
+    return () => {
+      delete window.privyLogin;
+      delete window.privyLogout;
+    };
+  }, [login, logout, authenticated]);
 
   return (
     <div style={{ position: "fixed", top: 12, left: 12, zIndex: 1000, fontFamily: "sans-serif" }}>

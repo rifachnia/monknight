@@ -5,9 +5,14 @@ import { PrivyProvider, usePrivy } from "@privy-io/react-auth";
 const CROSS_APP_ID = "cmd8euall0037le0my79qpz42"; // Monad Games ID
 
 async function fetchUsername(addr) {
-  const r = await fetch(`https://monad-games-id-site.vercel.app/api/check-wallet?wallet=${addr}`);
-  const data = await r.json();
-  return data?.hasUsername ? data.user.username : null;
+  try {
+    const r = await fetch(`https://monad-games-id-site.vercel.app/api/check-wallet?wallet=${addr}`);
+    const data = await r.json();
+    return data?.hasUsername ? data.user.username : null;
+  } catch (error) {
+    console.error('Failed to fetch username:', error);
+    return null;
+  }
 }
 
 function AuthButton() {
@@ -16,9 +21,17 @@ function AuthButton() {
   const [username, setUsername] = useState("");
 
   useEffect(() => {
-    if (!ready || !authenticated || !user) return;
+    if (!ready || !authenticated || !user) {
+      // Clear game auth state when not authenticated
+      localStorage.removeItem('mgid_user');
+      window.MONKNIGHT_AUTH = null;
+      window.dispatchEvent(new CustomEvent('monknight-auth', { 
+        detail: { authenticated: false, address: null, username: null } 
+      }));
+      return;
+    }
 
-    // cari cross-app account utk Monad Games ID
+    // Find cross-app account for Monad Games ID
     const cross = Array.isArray(user.linkedAccounts)
       ? user.linkedAccounts.find(
           (a) => a?.type === "cross_app" && a?.providerApp?.id === CROSS_APP_ID
@@ -32,12 +45,40 @@ function AuthButton() {
       if (addr) {
         const uname = await fetchUsername(addr);
         setUsername(uname || "");
+        
+        // Update localStorage for game compatibility
+        localStorage.setItem('mgid_user', uname || addr);
+        
+        // Update global auth state
+        window.MONKNIGHT_AUTH = { address: addr, username: uname || null };
+        
+        // Dispatch auth event for game
+        window.dispatchEvent(new CustomEvent('monknight-auth', { 
+          detail: { 
+            authenticated: true, 
+            address: addr, 
+            username: uname || null 
+          } 
+        }));
+
+        // Legacy callback support
         if (window.gameAuth?.onLogin) {
           window.gameAuth.onLogin({ address: addr, username: uname || null });
         }
       }
     })();
   }, [ready, authenticated, user]);
+
+  // Expose login function globally for game to use
+  useEffect(() => {
+    window.privyLogin = login;
+    window.privyLogout = logout;
+    
+    return () => {
+      delete window.privyLogin;
+      delete window.privyLogout;
+    };
+  }, [login, logout]);
 
   return (
     <div style={{ pointerEvents: "auto" }}>

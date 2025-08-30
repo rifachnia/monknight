@@ -5,6 +5,9 @@ export default class MainMenuScene extends Phaser.Scene {
   constructor() {
     super({ key: 'MainMenu' });
     this.isLoggedIn = false;
+    
+    // Bind event handler to maintain proper context
+    this.handleAuthChange = this.handleAuthChange.bind(this);
   }
 
   preload() {
@@ -70,8 +73,13 @@ export default class MainMenuScene extends Phaser.Scene {
       )
       .forEach(o => o.destroy());
 
-    // ====== LOGIN STATE SEDERHANA (pakai localStorage) ======
+    // ====== LOGIN STATE SEDERHANA (pakai localStorage + Privy events) ======
     this.isLoggedIn = !!localStorage.getItem('mgid_user'); // true kalau sudah login
+    
+    // Check for existing Privy authentication state
+    if (window.MONKNIGHT_AUTH?.address) {
+      this.isLoggedIn = true;
+    }
 
     const cam = this.cameras.main;
 
@@ -117,20 +125,49 @@ export default class MainMenuScene extends Phaser.Scene {
     ).setOrigin(1,1).setInteractive();
 
     loginBtn.on('pointerdown', () => {
-      // sementara mock; nanti ganti ke Privy/Monad Games ID SDK
-      const u = window.prompt('Enter Monad Games ID username:');
-      if (u && u.trim()) {
-        localStorage.setItem('mgid_user', u.trim());
-        this.isLoggedIn = true;
-        this.showToast?.('Logged in as ' + u.trim(), '#55ff99');
+      // Use Privy SDK for login instead of prompt
+      if (window.privyLogin) {
+        window.privyLogin(); // This will open Privy modal for authentication
+      } else {
+        // Fallback to mock login if Privy is not available
+        console.warn('Privy login not available, using fallback');
+        const u = window.prompt('Enter Monad Games ID username (fallback):');
+        if (u && u.trim()) {
+          localStorage.setItem('mgid_user', u.trim());
+          this.isLoggedIn = true;
+          this.showToast?.('Logged in as ' + u.trim(), '#55ff99');
+        }
       }
     });
+
+    // Listen for Privy authentication events
+    window.addEventListener('monknight-auth', this.handleAuthChange);
 
     // jaga posisi tombol login saat resize
     this.scale.on('resize', (g) => {
       const w = g?.width ?? cam.width, h = g?.height ?? cam.height;
       loginBtn.setPosition(w - 20, h - 20);
     });
+  }
+
+  // Handle authentication state changes from Privy
+  handleAuthChange(event) {
+    const { authenticated, address, username } = event.detail;
+    
+    if (authenticated && (address || username)) {
+      this.isLoggedIn = true;
+      const displayName = username || address?.slice(0, 6) + '...' + address?.slice(-4);
+      this.showToast?.('Logged in as ' + displayName, '#55ff99');
+    } else {
+      this.isLoggedIn = false;
+      localStorage.removeItem('mgid_user');
+    }
+  }
+
+  // Cleanup event listeners when scene is destroyed
+  destroy() {
+    window.removeEventListener('monknight-auth', this.handleAuthChange);
+    super.destroy();
   }
 
   // Helper methods
