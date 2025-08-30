@@ -6,6 +6,7 @@ import LeaderboardScene from './LeaderboardScene.js';
 import { timeAttack } from './time_attack.js';
 import { submitScore, getPlayerAddress, validateSubmissionData } from './contract.js';
 import { loadSession, getCurrentUser } from './session.js';
+import { checkRankImprovement } from './leaderboard.js';
 
 const GAME_TITLE = 'MONKNIGHT';
 
@@ -52,14 +53,32 @@ window.setPlayerIdentity = function ({ address, username }) {
 
 // Enhanced boss defeat logic with server-side score submission
 function onBossDefeated(finalScore, gameDuration = 0) {
-  // Try to get player from session first, fallback to legacy system
+  // Check authentication from multiple sources
+  const privyAuth = window.MONKNIGHT_AUTH;
   const currentUser = getCurrentUser();
-  const playerAddress = currentUser?.walletAddress || getPlayerAddress();
-  const playerUsername = currentUser?.username || PLAYER_USERNAME;
+  
+  // Use Privy auth as primary, fallback to session
+  let playerAddress, playerUsername;
+  
+  if (privyAuth && privyAuth.address) {
+    playerAddress = privyAuth.address;
+    playerUsername = privyAuth.username || PLAYER_USERNAME || "Player";
+    console.log("🔐 Using Privy authentication for score submission");
+  } else if (currentUser && currentUser.walletAddress) {
+    playerAddress = currentUser.walletAddress;
+    playerUsername = currentUser.username || PLAYER_USERNAME || "Player";
+    console.log("🔐 Using session authentication for score submission");
+  } else {
+    // Fallback to legacy system
+    playerAddress = getPlayerAddress();
+    playerUsername = PLAYER_USERNAME || "Player";
+    console.log("🔐 Using legacy authentication for score submission");
+  }
   
   if (!playerAddress) {
     console.warn("Player belum login - Please login first to submit scores");
-    // Show in-game prompt for login
+    console.warn("Debug auth state:", { privyAuth, currentUser, legacyAddress: getPlayerAddress() });
+    alert("Please login first to submit your score!");
     return;
   }
   
@@ -83,13 +102,26 @@ function onBossDefeated(finalScore, gameDuration = 0) {
         bossDefeated: true,
         playerUsername: playerUsername,
         mapKey: currentMapKey,
-        sessionId: currentUser?.userId
+        sessionId: privyAuth?.address || currentUser?.userId || playerAddress
       }
     ).then(result => {
       if (result && result.success) {
         console.log("✅ Score successfully submitted to blockchain!");
         console.log("📜 Transaction hash:", result.transactionHash);
-        // Could show success notification in game UI
+        
+        // Check for rank improvement after a short delay
+        setTimeout(async () => {
+          try {
+            const rankResult = await checkRankImprovement();
+            if (rankResult.improved) {
+              console.log(`🏆 ${rankResult.message}`);
+              // Could show rank improvement notification in game UI
+            }
+          } catch (err) {
+            console.warn('⚠️ Failed to check rank improvement:', err);
+          }
+        }, 3000); // Wait 3 seconds for blockchain confirmation
+        
       } else {
         console.log("❌ Failed to submit score to blockchain");
       }
@@ -201,7 +233,7 @@ const FIREBALL_EXTRA_BUFFER_MS = 300;
 const SCORE_K = 15_000_000; // 15s -> 1000 poin
 
 function calcPointsFromTime(ms) {
-  if (!taActive || ms <= 0) return 0;     // <- penting: sebelum start = 0
+  if (ms <= 0) return 0;                 // <- penting: sebelum start = 0
   const SCORE_K = 15_000_000;             // 15s => 1000 pts
   return Math.floor(SCORE_K / Math.max(1, ms));
 }

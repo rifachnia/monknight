@@ -11,21 +11,35 @@ import { isLoggedIn, loadSession } from './session.js';
  * @param {object} gameData - Additional game validation data
  */
 export async function submitScore(playerAddress, score, duration = 0, txCount = 1, gameData = {}) {
-  // Check if user is logged in first
-  if (!isLoggedIn()) {
+  // Check authentication from multiple sources
+  const privyAuth = window.MONKNIGHT_AUTH;
+  const session = loadSession();
+  
+  // Check if user is logged in (Privy OR session-based)
+  const isAuthenticatedViaPrivy = !!(privyAuth && privyAuth.address);
+  const isAuthenticatedViaSession = isLoggedIn();
+  
+  if (!isAuthenticatedViaPrivy && !isAuthenticatedViaSession) {
     console.warn("⚠️ Player must be logged in to submit scores");
+    console.warn("Debug: Privy auth:", privyAuth, "Session auth:", session);
     alert("Please login first to submit your score!");
     return false;
   }
 
-  const session = loadSession();
-  if (!session) {
-    console.warn("⚠️ No valid session found");
-    return false;
+  // Use Privy auth as primary, fallback to session
+  let actualPlayerAddress, actualUsername, actualUserId;
+  
+  if (isAuthenticatedViaPrivy) {
+    actualPlayerAddress = playerAddress || privyAuth.address;
+    actualUsername = privyAuth.username || "Player";
+    actualUserId = privyAuth.address; // Use address as userId for Privy
+    console.log("🔐 Using Privy authentication:", { address: actualPlayerAddress, username: actualUsername });
+  } else if (session) {
+    actualPlayerAddress = playerAddress || session.walletAddress;
+    actualUsername = session.username || "Player";
+    actualUserId = session.userId;
+    console.log("🔐 Using session authentication:", { address: actualPlayerAddress, username: actualUsername });
   }
-
-  // Use session data for player info
-  const actualPlayerAddress = playerAddress || session.walletAddress;
   
   if (!actualPlayerAddress) {
     console.warn("⚠️ Player address required for score submission");
@@ -38,7 +52,7 @@ export async function submitScore(playerAddress, score, duration = 0, txCount = 
   }
 
   try {
-    console.log(`🚀 Submitting score via API: Player=${session.username}, Address=${actualPlayerAddress}, Score=+${score}, Duration=${duration}ms`);
+    console.log(`🚀 Submitting score via API: Player=${actualUsername}, Address=${actualPlayerAddress}, Score=+${score}, Duration=${duration}ms`);
     
     const response = await fetch('/api/submit-score', {
       method: 'POST',
@@ -51,9 +65,9 @@ export async function submitScore(playerAddress, score, duration = 0, txCount = 
         txCount: Math.floor(txCount),
         duration: Math.floor(duration),
         session: {
-          userId: session.userId,
-          username: session.username,
-          provider: session.provider
+          userId: actualUserId,
+          username: actualUsername,
+          provider: isAuthenticatedViaPrivy ? 'privy' : 'session'
         },
         gameData: {
           timestamp: Date.now(),
@@ -112,6 +126,7 @@ export async function submitGameResult(playerAddress, score, txCount = 1, durati
 
 /**
  * Get the current game contract address
+ * Updated to match the Monad Games ID contract provided
  */
 export function getContractAddress() {
   return "0xceCBFF203C8B6044F52CE23D914A1bfD997541A4"; // Updated contract address
@@ -130,6 +145,31 @@ export function isPlayerReady() {
  */
 export function getPlayerAddress() {
   return window.MONKNIGHT_AUTH?.address || window.PLAYER_ADDRESS || null;
+}
+
+/**
+ * Debug function to check authentication state
+ */
+export function debugAuthState() {
+  const privyAuth = window.MONKNIGHT_AUTH;
+  const session = loadSession();
+  const legacyAddress = getPlayerAddress();
+  
+  console.log("=== AUTHENTICATION DEBUG ===");
+  console.log("Privy Auth:", privyAuth);
+  console.log("Session Auth:", session);
+  console.log("Legacy Address:", legacyAddress);
+  console.log("localStorage mgid_user:", localStorage.getItem('mgid_user'));
+  console.log("isLoggedIn():", isLoggedIn());
+  console.log("===========================");
+  
+  return {
+    privy: privyAuth,
+    session: session,
+    legacy: legacyAddress,
+    localStorage: localStorage.getItem('mgid_user'),
+    sessionValid: isLoggedIn()
+  };
 }
 
 /**
@@ -158,4 +198,9 @@ export function validateSubmissionData(score, duration) {
     valid: errors.length === 0,
     errors
   };
+}
+
+// Expose debug function to window for testing
+if (typeof window !== 'undefined') {
+  window.debugAuth = debugAuthState;
 }
