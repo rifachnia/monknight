@@ -23,13 +23,18 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { player, score, txCount, duration, gameData } = req.body;
+    const { player, score, txCount, duration, session, gameData } = req.body;
 
     // Basic validation
     if (!player || typeof score !== 'number' || typeof txCount !== 'number') {
       return res.status(400).json({ 
         error: 'Invalid request: missing required fields' 
       });
+    }
+
+    // Session validation (for now, just log it - will add JWT validation later)
+    if (session) {
+      console.log(`📮 Score submission from: ${session.username} (${session.userId})`);
     }
 
     // Validate Ethereum address format

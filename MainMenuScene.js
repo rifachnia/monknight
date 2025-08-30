@@ -1,6 +1,7 @@
 // ============ MAIN MENU SCENE ============
 import { timeAttack } from './time_attack.js';
 import { hasUsername } from './game.js';
+import { saveSession, loadSession, clearSession, isLoggedIn, mockLogin, mockLogout, getCurrentUser } from './session.js';
 
 class MainMenuScene extends Phaser.Scene {
   constructor() {
@@ -133,6 +134,112 @@ class MainMenuScene extends Phaser.Scene {
       instructions.setVisible(false);
       closeText.setVisible(false);
     });
+
+    // === NEW: Mock Authentication UI ===
+    this.createLoginUI();
+  }
+
+  // Create Login/Logout UI for development
+  createLoginUI() {
+    const centerX = this.cameras.main.centerX;
+    const baseY = this.cameras.main.centerY + 200; // Below other buttons
+
+    // Login/Logout Button
+    this.loginText = this.add.text(centerX, baseY, 'Login with Monad Games ID', {
+      fontFamily: 'Arial', 
+      fontSize: '18px', 
+      color: '#ffffff', 
+      backgroundColor: '#4f46e5',
+      padding: { x: 12, y: 8 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    // Status Text
+    this.statusText = this.add.text(centerX, baseY + 40, '', {
+      fontFamily: 'Arial', 
+      fontSize: '14px', 
+      color: '#a5e1ff'
+    }).setOrigin(0.5);
+
+    // Dev Mode Indicator
+    this.add.text(centerX, baseY + 70, '(Dev Mode - Mock Authentication)', {
+      fontFamily: 'Arial', 
+      fontSize: '12px', 
+      color: '#888888'
+    }).setOrigin(0.5);
+
+    // Update UI based on current session
+    this.updateLoginUI();
+
+    // Handle login/logout clicks
+    this.loginText.on('pointerup', async () => {
+      const current = loadSession();
+      if (current) {
+        // Logout
+        const result = mockLogout();
+        if (result.success) {
+          this.updateLoginUI();
+        }
+      } else {
+        // Login
+        try {
+          // DEV: Use prompt for now, will be replaced with Privy flow
+          const username = prompt('Enter username (dev login):', 'Monknight');
+          if (username && username.trim()) {
+            this.statusText.setText('Logging in...');
+            const result = await mockLogin(username.trim());
+            
+            if (result.success) {
+              this.updateLoginUI();
+              
+              // Update game's player identity for backward compatibility
+              window.MONKNIGHT_AUTH = {
+                address: result.session.walletAddress,
+                username: result.session.username
+              };
+              window.dispatchEvent(new CustomEvent('monknight-auth', {
+                detail: {
+                  address: result.session.walletAddress,
+                  username: result.session.username
+                }
+              }));
+              
+            } else {
+              this.statusText.setText('Login failed: ' + result.error);
+            }
+          }
+        } catch (e) {
+          this.statusText.setText('Login error');
+          console.error('Login error:', e);
+        }
+      }
+    });
+
+    // Hover effects
+    this.loginText.on('pointerover', () => {
+      this.loginText.setStyle({ backgroundColor: '#5856eb' });
+    });
+    this.loginText.on('pointerout', () => {
+      this.loginText.setStyle({ backgroundColor: '#4f46e5' });
+    });
+
+    // Listen for session changes from other components
+    window.addEventListener('mk-session-changed', () => {
+      this.updateLoginUI();
+    });
+  }
+
+  // Update login UI based on current session state
+  updateLoginUI() {
+    const session = loadSession();
+    if (session) {
+      this.loginText.setText('Logout');
+      this.statusText.setText(`Logged in as ${session.username}`);
+      this.statusText.setColor('#90EE90'); // Light green for logged in
+    } else {
+      this.loginText.setText('Login with Monad Games ID');
+      this.statusText.setText('Not logged in');
+      this.statusText.setColor('#a5e1ff'); // Light blue for not logged in
+    }
   }
 }
 

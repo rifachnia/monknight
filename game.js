@@ -5,6 +5,7 @@ import MainMenuScene from './MainMenuScene.js';
 import LeaderboardScene from './LeaderboardScene.js';
 import { timeAttack } from './time_attack.js';
 import { submitScore, getPlayerAddress, validateSubmissionData } from './contract.js';
+import { loadSession, getCurrentUser } from './session.js';
 
 const GAME_TITLE = 'MONKNIGHT';
 
@@ -51,15 +52,18 @@ window.setPlayerIdentity = function ({ address, username }) {
 
 // Enhanced boss defeat logic with server-side score submission
 function onBossDefeated(finalScore, gameDuration = 0) {
-  const playerAddress = getPlayerAddress();
+  // Try to get player from session first, fallback to legacy system
+  const currentUser = getCurrentUser();
+  const playerAddress = currentUser?.walletAddress || getPlayerAddress();
+  const playerUsername = currentUser?.username || PLAYER_USERNAME;
   
   if (!playerAddress) {
-    console.warn("Player belum login Monad Games ID");
+    console.warn("Player belum login - Please login first to submit scores");
     // Show in-game prompt for login
     return;
   }
   
-  console.log("Boss defeated! Player:", PLAYER_USERNAME, "Score:", finalScore, "Duration:", gameDuration);
+  console.log("Boss defeated! Player:", playerUsername, "Score:", finalScore, "Duration:", gameDuration);
   
   // Validate submission data before sending
   const validation = validateSubmissionData(finalScore, gameDuration);
@@ -77,8 +81,9 @@ function onBossDefeated(finalScore, gameDuration = 0) {
       1,              // Transaction count increment
       {
         bossDefeated: true,
-        playerUsername: PLAYER_USERNAME,
-        mapKey: currentMapKey
+        playerUsername: playerUsername,
+        mapKey: currentMapKey,
+        sessionId: currentUser?.userId
       }
     ).then(result => {
       if (result && result.success) {

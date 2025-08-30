@@ -1,4 +1,5 @@
 // contract.js - Client-side API calls to secure server
+import { isLoggedIn, loadSession } from './session.js';
 
 /**
  * Submit score to the blockchain via secure server API
@@ -10,7 +11,23 @@
  * @param {object} gameData - Additional game validation data
  */
 export async function submitScore(playerAddress, score, duration = 0, txCount = 1, gameData = {}) {
-  if (!playerAddress) {
+  // Check if user is logged in first
+  if (!isLoggedIn()) {
+    console.warn("⚠️ Player must be logged in to submit scores");
+    alert("Please login first to submit your score!");
+    return false;
+  }
+
+  const session = loadSession();
+  if (!session) {
+    console.warn("⚠️ No valid session found");
+    return false;
+  }
+
+  // Use session data for player info
+  const actualPlayerAddress = playerAddress || session.walletAddress;
+  
+  if (!actualPlayerAddress) {
     console.warn("⚠️ Player address required for score submission");
     return false;
   }
@@ -21,7 +38,7 @@ export async function submitScore(playerAddress, score, duration = 0, txCount = 
   }
 
   try {
-    console.log(`🚀 Submitting score via API: Player=${playerAddress}, Score=+${score}, Duration=${duration}ms`);
+    console.log(`🚀 Submitting score via API: Player=${session.username}, Address=${actualPlayerAddress}, Score=+${score}, Duration=${duration}ms`);
     
     const response = await fetch('/api/submit-score', {
       method: 'POST',
@@ -29,10 +46,15 @@ export async function submitScore(playerAddress, score, duration = 0, txCount = 
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        player: playerAddress,
+        player: actualPlayerAddress,
         score: Math.floor(score),
         txCount: Math.floor(txCount),
         duration: Math.floor(duration),
+        session: {
+          userId: session.userId,
+          username: session.username,
+          provider: session.provider
+        },
         gameData: {
           timestamp: Date.now(),
           userAgent: navigator.userAgent.substring(0, 100),
