@@ -25,17 +25,8 @@ export default class MainMenuScene extends Phaser.Scene {
       bg.setDisplaySize(screenWidth, screenHeight);
     }
 
-    // === TITLE ===
-    this.add.text(centerX, 150, 'MONKNIGHT', {
-      fontSize: '64px',
-      fontStyle: 'bold',
-      color: '#FFB800'
-    }).setOrigin(0.5);
-
-    this.add.text(centerX, 220, 'TOP-DOWN RPG', {
-      fontSize: '28px',
-      color: '#FFFFFF'
-    }).setOrigin(0.5);
+    // === TITLE REMOVED FOR CLEAN UI ===
+    // Small title text removed to prevent overlap with main game elements
 
     // === START GAME BUTTON ===
     this.startBtn = this.add.text(centerX, centerY, 'START GAME', {
@@ -67,6 +58,15 @@ export default class MainMenuScene extends Phaser.Scene {
       .filter(o =>
         (o instanceof Phaser.GameObjects.Text || o instanceof Phaser.GameObjects.BitmapText) &&
         /^(START\s+GAME|LEADERBOARD)$/i.test(((o.text || '') + '').replace(/\s+/g,' ').trim())
+      )
+      .forEach(o => o.destroy());
+
+    // Clean up small title text overlays (MONKNIGHT & TOP-DOWN RPG) if any remain
+    this.children.list
+      .filter(o =>
+        (o instanceof Phaser.GameObjects.Text) &&
+        /^(MONKNIGHT|TOP[\s\-_]?DOWN\s*RPG)$/i
+          .test(((o.text || '') + '').replace(/\s+/g,' ').trim())
       )
       .forEach(o => o.destroy());
 
