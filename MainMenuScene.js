@@ -260,10 +260,15 @@ export default class MainMenuScene extends Phaser.Scene {
   // Improved login attempt method
   attemptLogin() {
     // Check if Privy is ready and functions are available
-    if (window.privyReady && window.privyLogin) {
-      console.log('🎮 Opening Privy login modal...');
+    if (window.privyReady && (window.privyLoginMonad || window.privyLogin)) {
+      console.log('🎮 Opening Monad Games ID cross-app login...');
       try {
-        window.privyLogin(); // This will open Privy modal for authentication
+        // Use specific Monad login if available, fallback to standard login
+        if (window.privyLoginMonad) {
+          window.privyLoginMonad(); // This uses loginWithCrossAppAccount for Monad Games ID
+        } else {
+          window.privyLogin(); // Fallback to standard login
+        }
       } catch (error) {
         console.error('❌ Error calling Privy login:', error);
         this.showToast?.('Login failed. Please try again.', '#ff6b6b');
@@ -272,6 +277,7 @@ export default class MainMenuScene extends Phaser.Scene {
       console.error('❌ Privy not ready or login function not available:', {
         privyReady: !!window.privyReady,
         privyLogin: !!window.privyLogin,
+        privyLoginMonad: !!window.privyLoginMonad,
         privyLogout: !!window.privyLogout
       });
       
@@ -285,11 +291,15 @@ export default class MainMenuScene extends Phaser.Scene {
         retryCount++;
         console.log(`🔄 Login retry attempt ${retryCount}/${maxRetries}`);
         
-        if (window.privyReady && window.privyLogin) {
+        if (window.privyReady && (window.privyLoginMonad || window.privyLogin)) {
           console.log('♾️ Privy became ready during retry');
           this.showToast?.('Authentication system ready! Attempting login...', '#55ff99');
           try {
-            window.privyLogin();
+            if (window.privyLoginMonad) {
+              window.privyLoginMonad();
+            } else {
+              window.privyLogin();
+            }
           } catch (error) {
             console.error('❌ Error during retry login:', error);
             this.showToast?.('Login failed. Please refresh the page.', '#ff6b6b');

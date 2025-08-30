@@ -1,12 +1,13 @@
 // main.jsx
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
-import { PrivyProvider, usePrivy, CrossAppAccountWithMetadata } from "@privy-io/react-auth";
+import { PrivyProvider, usePrivy, useCrossAppAccounts } from "@privy-io/react-auth";
 
 console.log('🚀 main.jsx loading...');
 
 function AuthIsland() {
   const { authenticated, user, ready, login, logout } = usePrivy();
+  const { loginWithCrossAppAccount } = useCrossAppAccounts();
   const [addr, setAddr] = useState("");
   const [uname, setUname] = useState("");
   const [initError, setInitError] = useState(null);
@@ -44,6 +45,7 @@ function AuthIsland() {
       return;
     }
 
+    // Find cross-app account for Monad Games ID
     const cross = user.linkedAccounts.find(
       (acc) => acc && acc.type === "cross_app" && acc.providerApp?.id === "cmd8euall0037le0my79qpz42"
     );
@@ -124,15 +126,22 @@ function AuthIsland() {
 
   // Expose login/logout functions globally for game to use
   React.useEffect(() => {
-    console.log('🔧 Function exposure effect:', { ready, hasLogin: !!login, hasLogout: !!logout });
+    console.log('🔧 Function exposure effect:', { ready, hasLogin: !!login, hasLogout: !!logout, hasCrossAppLogin: !!loginWithCrossAppAccount });
     
     // Only expose functions when Privy is ready and we have valid functions
-    if (ready && login && logout) {
+    if (ready && login && logout && loginWithCrossAppAccount) {
+      // Expose standard login for general use
       window.privyLogin = login;
+      // Expose cross-app login specifically for Monad Games ID
+      window.privyLoginMonad = () => {
+        console.log('🎮 Initiating Monad Games ID cross-app login...');
+        return loginWithCrossAppAccount({ appId: 'cmd8euall0037le0my79qpz42' });
+      };
       window.privyLogout = logout;
       window.privyReady = true;
       console.log('🔗 Privy functions exposed and ready:', { 
-        privyLogin: !!login, 
+        privyLogin: !!login,
+        privyLoginMonad: true,
         privyLogout: !!logout, 
         ready: ready 
       });
@@ -163,7 +172,7 @@ function AuthIsland() {
     } else {
       // Mark as not ready if conditions aren't met
       window.privyReady = false;
-      console.log('⏳ Privy not ready yet:', { ready, hasLogin: !!login, hasLogout: !!logout });
+      console.log('⏳ Privy not ready yet:', { ready, hasLogin: !!login, hasLogout: !!logout, hasCrossAppLogin: !!loginWithCrossAppAccount });
     }
     
     // Clear auth state when not authenticated
@@ -177,11 +186,12 @@ function AuthIsland() {
     
     return () => {
       delete window.privyLogin;
+      delete window.privyLoginMonad;
       delete window.privyLogout;
       window.privyReady = false;
       console.log('🗑️ Privy functions cleaned up');
     };
-  }, [ready, login, logout, authenticated]);
+  }, [ready, login, logout, authenticated, loginWithCrossAppAccount]);
 
   return (
     <div style={{ position: "fixed", top: 12, left: 12, zIndex: 1000, fontFamily: "sans-serif" }}>
@@ -206,7 +216,10 @@ function AuthIsland() {
       
       {!authenticated ? (
         <button 
-          onClick={login}
+          onClick={() => {
+            console.log('🎮 Logging in with Monad Games ID cross-app...');
+            loginWithCrossAppAccount({ appId: 'cmd8euall0037le0my79qpz42' });
+          }}
           disabled={!ready}
           style={{
             opacity: ready ? 1 : 0.5,
@@ -307,10 +320,9 @@ function Root() {
       appId={appId}
       config={{
         embeddedWallets: { createOnLogin: "all-users" },
-        loginMethodsAndOrder: [
-          { type: "cross_app", options: { providerAppId: "cmd8euall0037le0my79qpz42" } },
-          "email", "google"
-        ],
+        loginMethodsAndOrder: {
+          primary: ['email', 'google', 'privy:cmd8euall0037le0my79qpz42']
+        },
         // Add error handling configuration
         appearance: {
           theme: 'light'
