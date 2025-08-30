@@ -6,8 +6,9 @@ export default class MainMenuScene extends Phaser.Scene {
     super({ key: 'MainMenu' });
     this.isLoggedIn = false;
     
-    // Bind event handler to maintain proper context
+    // Bind event handlers to maintain proper context
     this.handleAuthChange = this.handleAuthChange.bind(this);
+    this.handlePrivyReady = this.handlePrivyReady.bind(this);
   }
 
   preload() {
@@ -85,9 +86,23 @@ export default class MainMenuScene extends Phaser.Scene {
     console.log('🔍 Privy integration check:', {
       privyLogin: !!window.privyLogin,
       privyLogout: !!window.privyLogout,
+      privyReady: !!window.privyReady,
       monknightAuth: !!window.MONKNIGHT_AUTH,
       localStorage: !!localStorage.getItem('mgid_user')
     });
+
+    // Listen for Privy ready event
+    window.addEventListener('privy-ready', (event) => {
+      console.log('🎉 Privy is ready! Functions available.');
+      // Update button state if needed
+    });
+
+    // Give React time to load and initialize Privy
+    setTimeout(() => {
+      if (!window.privyReady) {
+        console.log('⏳ Waiting for Privy to initialize... This may take a moment.');
+      }
+    }, 1000);
 
     const cam = this.cameras.main;
 
@@ -133,13 +148,30 @@ export default class MainMenuScene extends Phaser.Scene {
     ).setOrigin(1,1).setInteractive();
 
     loginBtn.on('pointerdown', () => {
-      // Use Privy SDK for login - no fallback to prompt
-      if (window.privyLogin) {
+      // Check if Privy is ready and functions are available
+      if (window.privyReady && window.privyLogin) {
         console.log('🎮 Opening Privy login modal...');
-        window.privyLogin(); // This will open Privy modal for authentication
+        try {
+          window.privyLogin(); // This will open Privy modal for authentication
+        } catch (error) {
+          console.error('❌ Error calling Privy login:', error);
+          this.showToast?.('Login failed. Please try again.', '#ff6b6b');
+        }
       } else {
-        console.error('❌ Privy login not available. Please check if React auth component is loaded.');
-        this.showToast?.('Login system not ready. Please refresh the page.', '#ff6b6b');
+        console.error('❌ Privy not ready or login function not available:', {
+          privyReady: !!window.privyReady,
+          privyLogin: !!window.privyLogin,
+          privyLogout: !!window.privyLogout
+        });
+        this.showToast?.('Authentication system loading... Please wait a moment and try again.', '#ffaa00');
+        
+        // Try to wait for Privy to be ready
+        setTimeout(() => {
+          if (window.privyReady && window.privyLogin) {
+            console.log('♾️ Privy became ready after delay');
+            this.showToast?.('Authentication system ready! You can now login.', '#55ff99');
+          }
+        }, 2000);
       }
     });
 
@@ -172,9 +204,16 @@ export default class MainMenuScene extends Phaser.Scene {
     }
   }
 
+  // Handle Privy ready event
+  handlePrivyReady(event) {
+    console.log('🎉 Privy ready event received:', event.detail);
+    // Could update UI state here if needed
+  }
+
   // Cleanup event listeners when scene is destroyed
   destroy() {
     window.removeEventListener('monknight-auth', this.handleAuthChange);
+    window.removeEventListener('privy-ready', this.handlePrivyReady);
     super.destroy();
   }
 

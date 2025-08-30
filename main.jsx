@@ -50,9 +50,26 @@ function AuthIsland() {
 
   // Expose login/logout functions globally for game to use
   React.useEffect(() => {
-    window.privyLogin = login;
-    window.privyLogout = logout;
-    console.log('🔗 Privy functions exposed:', { privyLogin: !!login, privyLogout: !!logout });
+    // Only expose functions when Privy is ready and we have valid functions
+    if (ready && login && logout) {
+      window.privyLogin = login;
+      window.privyLogout = logout;
+      window.privyReady = true;
+      console.log('🔗 Privy functions exposed and ready:', { 
+        privyLogin: !!login, 
+        privyLogout: !!logout, 
+        ready: ready 
+      });
+      
+      // Notify game that Privy is ready
+      window.dispatchEvent(new CustomEvent('privy-ready', { 
+        detail: { ready: true, login, logout } 
+      }));
+    } else {
+      // Mark as not ready if conditions aren't met
+      window.privyReady = false;
+      console.log('⏳ Privy not ready yet:', { ready, hasLogin: !!login, hasLogout: !!logout });
+    }
     
     // Clear auth state when not authenticated
     if (!authenticated) {
@@ -66,9 +83,10 @@ function AuthIsland() {
     return () => {
       delete window.privyLogin;
       delete window.privyLogout;
+      window.privyReady = false;
       console.log('🗑️ Privy functions cleaned up');
     };
-  }, [login, logout, authenticated]);
+  }, [ready, login, logout, authenticated]);
 
   return (
     <div style={{ position: "fixed", top: 12, left: 12, zIndex: 1000, fontFamily: "sans-serif" }}>
