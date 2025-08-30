@@ -97,44 +97,35 @@ export default class MainMenuScene extends Phaser.Scene {
     const scripts = Array.from(document.scripts).map(s => s.src);
     console.log('📦 Loaded scripts:', scripts.filter(s => s.includes('main') || s.includes('react')));
 
-    // Listen for Privy ready event
-    window.addEventListener('privy-ready', (event) => {
+    // Listen for Privy ready events with better handling
+    const handlePrivyReady = (event) => {
       console.log('🎉 Privy is ready! Functions available.');
-      // Update button state if needed
-    });
+      this.updateAuthState();
+    };
+    
+    const handleAuthReady = (event) => {
+      console.log('🔐 Auth system ready:', event.detail);
+      this.updateAuthState();
+    };
+    
+    window.addEventListener('privy-ready', handlePrivyReady);
+    window.addEventListener('auth-ready', handleAuthReady);
+    
+    // Store event handlers for cleanup
+    this.authEventHandlers = {
+      'privy-ready': handlePrivyReady,
+      'auth-ready': handleAuthReady
+    };
 
-    // Give React time to load and initialize Privy
-    setTimeout(() => {
-      if (!window.privyReady) {
-        console.log('⏳ Waiting for Privy to initialize... This may take a moment.');
-        
-        // Check again after more time
-        setTimeout(() => {
-          console.log('🔍 Second check - Privy status:', {
-            privyReady: !!window.privyReady,
-            privyLogin: !!window.privyLogin,
-            privyLogout: !!window.privyLogout,
-            rootElement: !!document.getElementById('root'),
-            reactErrors: 'Check console for React errors'
-          });
-          
-          if (!window.privyReady) {
-            console.warn('⚠️ Privy still not ready after 3 seconds. Possible issues:');
-            console.warn('1. React component failed to mount');
-            console.warn('2. Privy SDK failed to initialize');
-            console.warn('3. Environment/network issues');
-          }
-        }, 2000);
-      }
-    }, 1000);
+    // Progressive Privy initialization check with extended retry logic
+    this.startPrivyStatusCheck();
 
     const cam = this.cameras.main;
 
     // ========= HIT-ZONE UNTUK TOMBOL START (menutup tombol pixel besar) =========
-    // Ukuran kira-kira mengikuti tombol pixel oranye. Atur sedikit jika tidak pas.
-    const START_WIDTH  = 520;   // tweak kalau perlu (±10–30 px)
-    const START_HEIGHT = 110;   // tweak kalau perlu
-    const START_Y      = centerY; // sama seperti posisi tombol START besar
+    const START_WIDTH  = 520;   
+    const START_HEIGHT = 110;   
+    const START_Y      = centerY; 
 
     const startHit = this.add.zone(centerX, START_Y, START_WIDTH, START_HEIGHT)
       .setOrigin(0.5)
@@ -142,14 +133,14 @@ export default class MainMenuScene extends Phaser.Scene {
 
     startHit.on('pointerup', () => {
       if (!this.isLoggedIn) {
-        this.showToast?.('Please login first', '#ff6b6b'); // pesan jika belum login
+        this.showToast?.('Please login first', '#ff6b6b');
         return;
       }
-      this.startGame(); // masuk ke in-game
+      this.startGame();
     });
 
-    // ========= (opsional) HIT-ZONE LEADERBOARD, kalau kamu mau aktif juga =========
-    const LB_Y = centerY + 120; // biasanya 100–130 px di bawah START. Sesuaikan sedikit.
+    // ========= HIT-ZONE LEADERBOARD =========
+    const LB_Y = centerY + 120;
     const lbHit = this.add.zone(centerX, LB_Y, START_WIDTH, START_HEIGHT)
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
@@ -172,48 +163,10 @@ export default class MainMenuScene extends Phaser.Scene {
     ).setOrigin(1,1).setInteractive();
 
     loginBtn.on('pointerdown', () => {
-      // Check if Privy is ready and functions are available
-      if (window.privyReady && window.privyLogin) {
-        console.log('🎮 Opening Privy login modal...');
-        try {
-          window.privyLogin(); // This will open Privy modal for authentication
-        } catch (error) {
-          console.error('❌ Error calling Privy login:', error);
-          this.showToast?.('Login failed. Please try again.', '#ff6b6b');
-        }
-      } else {
-        console.error('❌ Privy not ready or login function not available:', {
-          privyReady: !!window.privyReady,
-          privyLogin: !!window.privyLogin,
-          privyLogout: !!window.privyLogout
-        });
-        this.showToast?.('Authentication system loading... Please wait a moment and try again.', '#ffaa00');
-        
-        // Try to wait for Privy to be ready
-        setTimeout(() => {
-          if (window.privyReady && window.privyLogin) {
-            console.log('♾️ Privy became ready after delay');
-            this.showToast?.('Authentication system ready! You can now login.', '#55ff99');
-          } else {
-            console.log('⚠️ Privy still not ready. Trying longer wait...');
-            this.showToast?.('Still loading... Please wait a few more seconds.', '#ffaa00');
-            
-            // Try one more time with even longer delay
-            setTimeout(() => {
-              if (window.privyReady && window.privyLogin) {
-                console.log('♾️ Privy ready after extended wait');
-                this.showToast?.('Authentication ready! Please try logging in again.', '#55ff99');
-              } else {
-                console.error('❌ Privy failed to initialize after extended wait');
-                this.showToast?.('Please refresh the page and try again.', '#ff6b6b');
-              }
-            }, 3000);
-          }
-        }, 2000);
-      }
+      this.attemptLogin();
     });
-
-    // Listen for Privy authentication events
+    
+    // Enhanced authentication event listening
     window.addEventListener('monknight-auth', this.handleAuthChange);
 
     // jaga posisi tombol login saat resize
@@ -221,6 +174,141 @@ export default class MainMenuScene extends Phaser.Scene {
       const w = g?.width ?? cam.width, h = g?.height ?? cam.height;
       loginBtn.setPosition(w - 20, h - 20);
     });
+  }
+
+  // Start Privy status checking with progressive delays
+  startPrivyStatusCheck() {
+    let checkCount = 0;
+    const maxChecks = 10;
+    
+    const checkPrivyStatus = () => {
+      checkCount++;
+      
+      if (window.privyReady) {
+        console.log(`✅ Privy ready after ${checkCount} checks`);
+        this.updateAuthState();
+        return;
+      }
+      
+      if (checkCount <= 3) {
+        console.log(`⏳ Waiting for Privy to initialize... (Check ${checkCount}/${maxChecks})`);
+      } else if (checkCount <= 6) {
+        console.log(`⏳ Still waiting for Privy... (Check ${checkCount}/${maxChecks}) - This may take a moment.`);
+      } else {
+        console.log(`⚠️ Extended wait for Privy... (Check ${checkCount}/${maxChecks}) - Possible network delay.`);
+      }
+      
+      // Detailed status check
+      const status = {
+        privyReady: !!window.privyReady,
+        privyLogin: !!window.privyLogin,
+        privyLogout: !!window.privyLogout,
+        rootElement: !!document.getElementById('root'),
+        reactErrors: 'Check console for React errors',
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log(`🔍 Check ${checkCount} - Privy status:`, status);
+      
+      if (checkCount >= maxChecks) {
+        console.warn('⚠️ Privy still not ready after extended wait. Possible issues:');
+        console.warn('1. React component failed to mount properly');
+        console.warn('2. Privy SDK failed to initialize due to network issues');
+        console.warn('3. Environment/configuration issues');
+        console.warn('4. Browser compatibility issues');
+        
+        // Try one final check with detailed diagnostics
+        setTimeout(() => {
+          console.log('🔍 Final diagnostic check:');
+          console.log('- Window object keys:', Object.keys(window).filter(k => k.includes('privy')));
+          console.log('- React root element:', document.getElementById('root'));
+          console.log('- Script tags:', Array.from(document.scripts).length);
+          console.log('- Console errors count:', this.getConsoleErrorCount());
+        }, 1000);
+        
+        return;
+      }
+      
+      // Progressive delay: 1s, 1s, 1s, 2s, 2s, 3s, 3s, 5s, 5s, 8s
+      const nextDelay = checkCount <= 3 ? 1000 : 
+                       checkCount <= 5 ? 2000 : 
+                       checkCount <= 7 ? 3000 : 
+                       checkCount <= 9 ? 5000 : 8000;
+      
+      setTimeout(checkPrivyStatus, nextDelay);
+    };
+    
+    // Start the check
+    setTimeout(checkPrivyStatus, 500); // Initial delay to let React mount
+  }
+  
+  // Helper method to get console error count (for diagnostics)
+  getConsoleErrorCount() {
+    return document.querySelectorAll('[data-error]').length || 'Unknown';
+  }
+  
+  // Method to update authentication state
+  updateAuthState() {
+    const wasLoggedIn = this.isLoggedIn;
+    this.isLoggedIn = !!localStorage.getItem('mgid_user') || !!(window.MONKNIGHT_AUTH?.address);
+    
+    if (wasLoggedIn !== this.isLoggedIn) {
+      console.log('🔄 Auth state changed:', { wasLoggedIn, nowLoggedIn: this.isLoggedIn });
+    }
+  }
+  
+  // Improved login attempt method
+  attemptLogin() {
+    // Check if Privy is ready and functions are available
+    if (window.privyReady && window.privyLogin) {
+      console.log('🎮 Opening Privy login modal...');
+      try {
+        window.privyLogin(); // This will open Privy modal for authentication
+      } catch (error) {
+        console.error('❌ Error calling Privy login:', error);
+        this.showToast?.('Login failed. Please try again.', '#ff6b6b');
+      }
+    } else {
+      console.error('❌ Privy not ready or login function not available:', {
+        privyReady: !!window.privyReady,
+        privyLogin: !!window.privyLogin,
+        privyLogout: !!window.privyLogout
+      });
+      
+      this.showToast?.('Authentication system loading... Please wait a moment and try again.', '#ffaa00');
+      
+      // Extended retry logic for slow initialization
+      let retryCount = 0;
+      const maxRetries = 5;
+      
+      const retryLogin = () => {
+        retryCount++;
+        console.log(`🔄 Login retry attempt ${retryCount}/${maxRetries}`);
+        
+        if (window.privyReady && window.privyLogin) {
+          console.log('♾️ Privy became ready during retry');
+          this.showToast?.('Authentication system ready! Attempting login...', '#55ff99');
+          try {
+            window.privyLogin();
+          } catch (error) {
+            console.error('❌ Error during retry login:', error);
+            this.showToast?.('Login failed. Please refresh the page.', '#ff6b6b');
+          }
+        } else if (retryCount < maxRetries) {
+          this.showToast?.(`Still loading... Retry ${retryCount}/${maxRetries}`, '#ffaa00');
+          
+          // Progressive delay: 1s, 3s, 6s, 10s, 15s
+          const delay = retryCount * retryCount * 1000 + 1000;
+          setTimeout(retryLogin, delay);
+        } else {
+          console.warn('⚠️ Max login retries reached');
+          this.showToast?.('Authentication system failed to load. Please refresh the page.', '#ff6b6b');
+        }
+      };
+      
+      // Start retry sequence
+      setTimeout(retryLogin, 1000);
+    }
   }
 
   // Handle authentication state changes from Privy
@@ -245,13 +333,21 @@ export default class MainMenuScene extends Phaser.Scene {
   // Handle Privy ready event
   handlePrivyReady(event) {
     console.log('🎉 Privy ready event received:', event.detail);
-    // Could update UI state here if needed
   }
 
   // Cleanup event listeners when scene is destroyed
   destroy() {
+    // Clean up authentication event handlers
     window.removeEventListener('monknight-auth', this.handleAuthChange);
-    window.removeEventListener('privy-ready', this.handlePrivyReady);
+    
+    // Clean up Privy ready event handlers if they exist
+    if (this.authEventHandlers) {
+      Object.entries(this.authEventHandlers).forEach(([event, handler]) => {
+        window.removeEventListener(event, handler);
+      });
+    }
+    
+    console.log('🧹 MainMenuScene: Cleaned up event listeners');
     super.destroy();
   }
 

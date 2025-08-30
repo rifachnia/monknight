@@ -9,47 +9,116 @@ function AuthIsland() {
   const { authenticated, user, ready, login, logout } = usePrivy();
   const [addr, setAddr] = useState("");
   const [uname, setUname] = useState("");
+  const [initError, setInitError] = useState(null);
 
   console.log('🔍 AuthIsland render:', { ready, authenticated, hasUser: !!user, hasLogin: !!login });
 
-  // Ambil wallet dari Cross App (Monad Games ID)
+  // Handle authentication state changes
   useEffect(() => {
     console.log('🔄 AuthIsland useEffect:', { ready, authenticated, hasUser: !!user });
     
-    if (!ready || !authenticated) return;
+    // Clear error state on auth changes
+    setInitError(null);
+    
+    if (!ready) {
+      console.log('⏳ Privy SDK not ready yet...');
+      return;
+    }
+    
+    if (!authenticated) {
+      // Clear auth state when not authenticated
+      setAddr("");
+      setUname("");
+      localStorage.removeItem('mgid_user');
+      window.MONKNIGHT_AUTH = null;
+      window.dispatchEvent(new CustomEvent("monknight-auth", { 
+        detail: { authenticated: false, address: null, username: null } 
+      }));
+      return;
+    }
 
-    const cross = user?.linkedAccounts?.find(
-      (acc) => acc.type === "cross_app" && acc.providerApp?.id === "cmd8euall0037le0my79qpz42"
+    // Safety check for user object structure
+    if (!user || !user.linkedAccounts || !Array.isArray(user.linkedAccounts)) {
+      console.warn('⚠️ User object structure invalid:', user);
+      setInitError('Invalid user data structure');
+      return;
+    }
+
+    const cross = user.linkedAccounts.find(
+      (acc) => acc && acc.type === "cross_app" && acc.providerApp?.id === "cmd8euall0037le0my79qpz42"
     );
 
-    const address = cross?.embeddedWallets?.[0]?.address || "";
-    if (!address) return;
+    if (!cross || !cross.embeddedWallets || !Array.isArray(cross.embeddedWallets)) {
+      console.warn('⚠️ Cross-app account or embedded wallets not found:', cross);
+      return;
+    }
+
+    const address = cross.embeddedWallets[0]?.address || "";
+    if (!address) {
+      console.warn('⚠️ No wallet address found in cross-app account');
+      return;
+    }
 
     setAddr(address);
 
-    // Fetch username dari endpoint
+    // Fetch username with retry logic
     (async () => {
-      try {
-        const r = await fetch(`https://monad-games-id-site.vercel.app/api/check-wallet?wallet=${address}`);
-        const j = await r.json();
-        const username = j?.username || "";
-        setUname(username);
-        // Store in localStorage for game compatibility
-        localStorage.setItem('mgid_user', username || address);
-        // publish to game:
-        window.MONKNIGHT_AUTH = { address, username };
-        window.dispatchEvent(new CustomEvent("monknight-auth", { 
-          detail: { authenticated: true, address, username } 
-        }));
-        console.log('✅ Privy authentication successful:', { address, username });
-      } catch (e) {
-        console.error("check-wallet failed:", e);
-        localStorage.setItem('mgid_user', address);
-        window.MONKNIGHT_AUTH = { address, username: "" };
-        window.dispatchEvent(new CustomEvent("monknight-auth", { 
-          detail: { authenticated: true, address, username: "" } 
-        }));
-      }
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      const fetchWithRetry = async () => {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+          
+          const r = await fetch(
+            `https://monad-games-id-site.vercel.app/api/check-wallet?wallet=${address}`,
+            { signal: controller.signal }
+          );
+          
+          clearTimeout(timeoutId);
+          
+          if (!r.ok) {
+            throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+          }
+          
+          const j = await r.json();
+          const username = j?.username || "";
+          setUname(username);
+          
+          // Store in localStorage for game compatibility
+          localStorage.setItem('mgid_user', username || address);
+          
+          // Publish to game
+          window.MONKNIGHT_AUTH = { address, username };
+          window.dispatchEvent(new CustomEvent("monknight-auth", { 
+            detail: { authenticated: true, address, username } 
+          }));
+          
+          console.log('✅ Privy authentication successful:', { address, username });
+          setInitError(null);
+          
+        } catch (e) {
+          console.error(`❌ check-wallet attempt ${retryCount + 1} failed:`, e);
+          
+          if (retryCount < maxRetries - 1) {
+            retryCount++;
+            console.log(`🔄 Retrying username fetch (${retryCount}/${maxRetries})...`);
+            setTimeout(fetchWithRetry, 1000 * retryCount); // Progressive delay
+          } else {
+            console.warn('⚠️ All username fetch attempts failed, using address only');
+            setUname("");
+            localStorage.setItem('mgid_user', address);
+            window.MONKNIGHT_AUTH = { address, username: "" };
+            window.dispatchEvent(new CustomEvent("monknight-auth", { 
+              detail: { authenticated: true, address, username: "" } 
+            }));
+            setInitError('Failed to fetch username');
+          }
+        }
+      };
+      
+      await fetchWithRetry();
     })();
   }, [authenticated, user, ready]);
 
@@ -68,18 +137,29 @@ function AuthIsland() {
         ready: ready 
       });
       
-      // Notify game that Privy is ready
-      window.dispatchEvent(new CustomEvent('privy-ready', { 
-        detail: { ready: true, login, logout } 
-      }));
-      
-      // Also try to notify after a short delay to ensure game is listening
-      setTimeout(() => {
-        console.log('🔔 Delayed Privy ready notification');
+      // Notify game that Privy is ready with multiple events for better compatibility
+      const notifyReady = () => {
         window.dispatchEvent(new CustomEvent('privy-ready', { 
           detail: { ready: true, login, logout } 
         }));
-      }, 500);
+        
+        // Also dispatch a generic auth-ready event
+        window.dispatchEvent(new CustomEvent('auth-ready', { 
+          detail: { ready: true, system: 'privy' } 
+        }));
+      };
+      
+      // Immediate notification
+      notifyReady();
+      
+      // Delayed notifications to ensure game is listening
+      setTimeout(notifyReady, 100);
+      setTimeout(notifyReady, 500);
+      setTimeout(() => {
+        console.log('🔔 Final Privy ready notification sent');
+        notifyReady();
+      }, 1000);
+      
     } else {
       // Mark as not ready if conditions aren't met
       window.privyReady = false;
@@ -117,10 +197,30 @@ function AuthIsland() {
         borderRadius: '2px'
       }}>
         React: {ready ? 'Ready' : 'Loading...'}
+        {initError && (
+          <div style={{ color: '#ff6b6b', fontSize: '9px' }}>
+            {initError}
+          </div>
+        )}
       </div>
       
       {!authenticated ? (
-        <button onClick={login}>Sign in with Monad Games ID</button>
+        <button 
+          onClick={login}
+          disabled={!ready}
+          style={{
+            opacity: ready ? 1 : 0.5,
+            cursor: ready ? 'pointer' : 'not-allowed',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            border: 'none',
+            background: '#4f46e5',
+            color: 'white',
+            fontSize: '14px'
+          }}
+        >
+          {ready ? 'Sign in with Monad Games ID' : 'Loading...'}
+        </button>
       ) : (
         <div style={{ background: "rgba(0,0,0,.5)", padding: 8, borderRadius: 8, color: "#fff" }}>
           <div style={{ fontSize: 12 }}>Wallet: {addr || "…"}</div>
@@ -128,7 +228,22 @@ function AuthIsland() {
 
           {/* REMOVED: Register Username button to avoid UI overlap */}
 
-          <button onClick={logout} style={{ marginTop: 6, marginLeft: 8 }}>Logout</button>
+          <button 
+            onClick={logout} 
+            style={{ 
+              marginTop: 6, 
+              marginLeft: 8,
+              padding: '4px 8px',
+              borderRadius: '4px',
+              border: 'none',
+              background: '#dc2626',
+              color: 'white',
+              fontSize: '12px',
+              cursor: 'pointer'
+            }}
+          >
+            Logout
+          </button>
         </div>
       )}
     </div>
@@ -138,10 +253,15 @@ function AuthIsland() {
 function Root() {
   console.log('🌱 Root component rendering...');
   
-  // Get app ID from environment variables (Vite will inject this at build time)
-  const appId = import.meta.env.VITE_PRIVY_APP_ID || process.env.NEXT_PUBLIC_PRIVY_APP_ID || "cmex2ejkj00psjx0bodrlnx6d";
+  // Get app ID from environment variables with fallback
+  const appId = import.meta.env.VITE_PRIVY_APP_ID || 
+                import.meta.env.NEXT_PUBLIC_PRIVY_APP_ID || 
+                process.env.NEXT_PUBLIC_PRIVY_APP_ID || 
+                "cmex2ejkj00psjx0bodrlnx6d";
   
   console.log('🔑 Using Privy App ID:', appId?.slice(0, 8) + '...');
+  
+  const [mountError, setMountError] = React.useState(null);
   
   React.useEffect(() => {
     console.log('🌱 Root component mounted');
@@ -149,10 +269,38 @@ function Root() {
     // Set initial state
     window.privyReady = false;
     
+    // Error boundary for catching initialization errors
+    const errorHandler = (event) => {
+      if (event.error && event.error.message.includes('privy')) {
+        console.error('🚫 Privy initialization error caught:', event.error);
+        setMountError('Privy SDK failed to initialize');
+      }
+    };
+    
+    window.addEventListener('error', errorHandler);
+    
     return () => {
       console.log('🌱 Root component unmounting');
+      window.removeEventListener('error', errorHandler);
     };
   }, []);
+  
+  if (mountError) {
+    return (
+      <div style={{ 
+        position: 'fixed', 
+        top: 12, 
+        left: 12, 
+        background: '#ff6b6b', 
+        color: 'white', 
+        padding: '8px 12px', 
+        borderRadius: '6px', 
+        fontSize: '12px' 
+      }}>
+        Auth Error: {mountError}
+      </div>
+    );
+  }
   
   return (
     <PrivyProvider
@@ -162,7 +310,11 @@ function Root() {
         loginMethodsAndOrder: [
           { type: "cross_app", options: { providerAppId: "cmd8euall0037le0my79qpz42" } },
           "email", "google"
-        ]
+        ],
+        // Add error handling configuration
+        appearance: {
+          theme: 'light'
+        }
       }}
     >
       <AuthIsland />
@@ -177,8 +329,69 @@ try {
     throw new Error('Root element not found');
   }
   console.log('🎯 Root element found, creating React root...');
-  ReactDOM.createRoot(rootElement).render(<Root />);
+  
+  // Add error boundary to catch React rendering errors
+  const root = ReactDOM.createRoot(rootElement);
+  
+  // Wrap in error boundary
+  const AppWithErrorBoundary = () => {
+    const [hasError, setHasError] = React.useState(false);
+    const [error, setError] = React.useState(null);
+    
+    React.useEffect(() => {
+      const errorHandler = (event) => {
+        if (event.error) {
+          console.error('❗ React error caught:', event.error);
+          setHasError(true);
+          setError(event.error.message);
+        }
+      };
+      
+      window.addEventListener('error', errorHandler);
+      return () => window.removeEventListener('error', errorHandler);
+    }, []);
+    
+    if (hasError) {
+      return (
+        <div style={{ 
+          position: 'fixed', 
+          top: 12, 
+          left: 12, 
+          background: '#ff6b6b', 
+          color: 'white', 
+          padding: '8px 12px', 
+          borderRadius: '6px' 
+        }}>
+          React Error: {error}
+        </div>
+      );
+    }
+    
+    return <Root />;
+  };
+  
+  root.render(<AppWithErrorBoundary />);
   console.log('✅ React app rendered successfully');
 } catch (error) {
   console.error('❌ Failed to render React app:', error);
+  
+  // Fallback UI if React completely fails
+  const rootElement = document.getElementById("root");
+  if (rootElement) {
+    rootElement.innerHTML = `
+      <div style="
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        background: #ff6b6b;
+        color: white;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-family: sans-serif;
+        font-size: 12px;
+      ">
+        Authentication system failed to load. Please refresh the page.
+      </div>
+    `;
+  }
 }
