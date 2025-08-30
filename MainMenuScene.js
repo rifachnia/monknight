@@ -53,7 +53,7 @@ export default class MainMenuScene extends Phaser.Scene {
     // === HOW TO PLAY POPUP ===
     this.createHowToPlayPopup(howToPlayText, centerX, centerY);
 
-    // --- Remove overlapping text labels that cover main buttons ---
+    // Clean up overlapping text elements
     this.children.list
       .filter(o =>
         (o instanceof Phaser.GameObjects.Text || o instanceof Phaser.GameObjects.BitmapText) &&
@@ -70,109 +70,88 @@ export default class MainMenuScene extends Phaser.Scene {
       )
       .forEach(o => o.destroy());
 
-    // ===== Login state management =====
-    this.isLoggedIn = !!localStorage.getItem('mgid_user');
+    // ====== LOGIN STATE SEDERHANA (pakai localStorage) ======
+    this.isLoggedIn = !!localStorage.getItem('mgid_user'); // true kalau sudah login
 
-    // ===== Login button (bottom-right, aligned with "How to Play?") =====
     const cam = this.cameras.main;
+
+    // ========= HIT-ZONE UNTUK TOMBOL START (menutup tombol pixel besar) =========
+    // Ukuran kira-kira mengikuti tombol pixel oranye. Atur sedikit jika tidak pas.
+    const START_WIDTH  = 520;   // tweak kalau perlu (±10–30 px)
+    const START_HEIGHT = 110;   // tweak kalau perlu
+    const START_Y      = centerY; // sama seperti posisi tombol START besar
+
+    const startHit = this.add.zone(centerX, START_Y, START_WIDTH, START_HEIGHT)
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+
+    startHit.on('pointerup', () => {
+      if (!this.isLoggedIn) {
+        this.showToast?.('Please login first', '#ff6b6b'); // pesan jika belum login
+        return;
+      }
+      this.startGame(); // masuk ke in-game
+    });
+
+    // ========= (opsional) HIT-ZONE LEADERBOARD, kalau kamu mau aktif juga =========
+    const LB_Y = centerY + 120; // biasanya 100–130 px di bawah START. Sesuaikan sedikit.
+    const lbHit = this.add.zone(centerX, LB_Y, START_WIDTH, START_HEIGHT)
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+
+    lbHit.on('pointerup', () => {
+      if (!this.isLoggedIn) {
+        this.showToast?.('Please login first', '#ff6b6b');
+        return;
+      }
+      this.scene.start('LeaderboardScene');
+    });
+
+    // ====== TOMBOL LOGIN (kanan-bawah, jangan menutup tombol START) ======
     const loginBtn = this.add.text(
       cam.width - 20, cam.height - 20,
       'Login with Monad Games ID',
-      {
-        fontFamily: 'pixelFont',
-        fontSize: '18px',
-        backgroundColor: '#5533aa',
-        color: '#ffffff',
-        padding: { x: 12, y: 6 }
-      }
+      { fontFamily: 'pixelFont', fontSize: '18px',
+        backgroundColor: '#5533aa', color: '#fff',
+        padding: { x:12, y:6 } }
     ).setOrigin(1,1).setInteractive();
 
-    // Keep position during resize
-    this.scale.on('resize', (g) => {
-      const w = g?.width ?? cam.width, h = g?.height ?? cam.height;
-      loginBtn.setPosition(w - 20, h - 20);
-    });
-
-    // Mock login - will be replaced with Privy/Monad Games ID SDK
     loginBtn.on('pointerdown', () => {
+      // sementara mock; nanti ganti ke Privy/Monad Games ID SDK
       const u = window.prompt('Enter Monad Games ID username:');
       if (u && u.trim()) {
         localStorage.setItem('mgid_user', u.trim());
         this.isLoggedIn = true;
-        this.showToast('Logged in as ' + u.trim(), '#55ff99');
+        this.showToast?.('Logged in as ' + u.trim(), '#55ff99');
       }
     });
 
-    // ====== LOGIN GATING FOR BUTTONS ======
-    // Remove existing listeners and add login check
-    if (this.startBtn && this.startBtn.removeAllListeners) {
-      this.startBtn.removeAllListeners('pointerdown');
-    }
-    this.startBtn.on('pointerdown', () => {
-      if (!this.isLoggedIn) {
-        this.showToast('Please login first', '#ff6b6b');
-        return;
-      }
-      try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
-      this.scene.start('Game', { mapKey: 'town' });
+    // jaga posisi tombol login saat resize
+    this.scale.on('resize', (g) => {
+      const w = g?.width ?? cam.width, h = g?.height ?? cam.height;
+      loginBtn.setPosition(w - 20, h - 20);
     });
-
-    if (this.leaderBtn && this.leaderBtn.removeAllListeners) {
-      this.leaderBtn.removeAllListeners('pointerdown');
-    }
-    this.leaderBtn.on('pointerdown', () => {
-      if (!this.isLoggedIn) {
-        this.showToast('Please login first', '#ff6b6b');
-        return;
-      }
-      try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
-      this.scene.launch('Leaderboard');
-      this.scene.bringToTop('Leaderboard');
-      this.scene.pause();
-    });
-
-    // === KEYBOARD SHORTCUTS ===
-    this.input.keyboard.on('keydown-ENTER', () => {
-      if (this.isLoggedIn) {
-        try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
-        this.scene.start('Game', { mapKey: 'town' });
-      } else {
-        this.showToast('Please login first', '#ff6b6b');
-      }
-    });
-
-    this.input.keyboard.on('keydown-L', () => {
-      if (this.isLoggedIn && !this.scene.isActive('Leaderboard')) {
-        try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
-        this.scene.launch('Leaderboard');
-        this.scene.bringToTop('Leaderboard');
-        this.scene.pause();
-      } else {
-        this.showToast('Please login first', '#ff6b6b');
-      }
-    });
-
-    // Fallback login gating for any interactive menu objects
-    this.input.on('gameobjectdown', (pointer, obj) => {
-      if (this.isLoggedIn) return;
-      
-      const isMenuObject = (obj.type === 'Image' || obj.type === 'Sprite' || obj.type === 'Container' || obj.type === 'Text');
-      if (isMenuObject && obj !== loginBtn && obj !== howToPlayText) {
-        this.showToast('Please login first', '#ff6b6b');
-        pointer.event.stopImmediatePropagation();
-      }
-    }, this);
-
-    // Toast helper
-    this.showToast = (msg, color='#ff6b6b') => {
-      const t = this.add.text(this.cameras.main.centerX, this.cameras.main.centerY + 140,
-        msg, { fontFamily: 'pixelFont', fontSize: '18px', color }).setOrigin(0.5);
-      this.tweens.add({ targets: t, alpha: 0, duration: 1400, onComplete: () => t.destroy() });
-    };
   }
 
-  // Helper method for toast notifications (defined in create method above)
-  // showToast is defined inline in create() to avoid duplication
+  // Helper methods
+  startGame() {
+    // Coba beberapa key scene umum; kalau tidak ketemu, auto-pilih non-menu
+    const tryKeys = ['GameScene','MainScene','SceneMain','Game','BattleScene'];
+    for (const k of tryKeys) {
+      try { if (this.scene.get(k)) { this.scene.start(k); return; } } catch (e) {}
+    }
+    // fallback: pilih scene pertama yang bukan preload/menu/leaderboard
+    const all = this.game.scene.scenes.map(s => s.sys.settings.key);
+    const target = all.find(k => !/menu|preload|leader/i.test(k));
+    if (target) this.scene.start(target);
+    else console.warn('No game scene found. Available:', all);
+  }
+
+  showToast(msg, color = '#ff6b6b') {
+    const t = this.add.text(this.cameras.main.centerX, this.cameras.main.centerY + 140,
+      msg, { fontFamily:'pixelFont', fontSize:'18px', color }).setOrigin(0.5);
+    this.tweens.add({ targets:t, alpha:0, duration:1400, onComplete:() => t.destroy() });
+  }
 
   // Create How to Play popup
   createHowToPlayPopup(howToPlayText, centerX, centerY) {
