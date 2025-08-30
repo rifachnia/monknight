@@ -36,6 +36,7 @@ function AuthIsland() {
         window.dispatchEvent(new CustomEvent("monknight-auth", { 
           detail: { authenticated: true, address, username } 
         }));
+        console.log('✅ Privy authentication successful:', { address, username });
       } catch (e) {
         console.error("check-wallet failed:", e);
         localStorage.setItem('mgid_user', address);
@@ -51,6 +52,7 @@ function AuthIsland() {
   React.useEffect(() => {
     window.privyLogin = login;
     window.privyLogout = logout;
+    console.log('🔗 Privy functions exposed:', { privyLogin: !!login, privyLogout: !!logout });
     
     // Clear auth state when not authenticated
     if (!authenticated) {
@@ -64,6 +66,7 @@ function AuthIsland() {
     return () => {
       delete window.privyLogin;
       delete window.privyLogout;
+      console.log('🗑️ Privy functions cleaned up');
     };
   }, [login, logout, authenticated]);
 

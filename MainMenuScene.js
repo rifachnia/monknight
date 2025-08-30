@@ -81,6 +81,14 @@ export default class MainMenuScene extends Phaser.Scene {
       this.isLoggedIn = true;
     }
 
+    // Debug: Check if Privy functions are available
+    console.log('🔍 Privy integration check:', {
+      privyLogin: !!window.privyLogin,
+      privyLogout: !!window.privyLogout,
+      monknightAuth: !!window.MONKNIGHT_AUTH,
+      localStorage: !!localStorage.getItem('mgid_user')
+    });
+
     const cam = this.cameras.main;
 
     // ========= HIT-ZONE UNTUK TOMBOL START (menutup tombol pixel besar) =========
@@ -125,18 +133,13 @@ export default class MainMenuScene extends Phaser.Scene {
     ).setOrigin(1,1).setInteractive();
 
     loginBtn.on('pointerdown', () => {
-      // Use Privy SDK for login instead of prompt
+      // Use Privy SDK for login - no fallback to prompt
       if (window.privyLogin) {
+        console.log('🎮 Opening Privy login modal...');
         window.privyLogin(); // This will open Privy modal for authentication
       } else {
-        // Fallback to mock login if Privy is not available
-        console.warn('Privy login not available, using fallback');
-        const u = window.prompt('Enter Monad Games ID username (fallback):');
-        if (u && u.trim()) {
-          localStorage.setItem('mgid_user', u.trim());
-          this.isLoggedIn = true;
-          this.showToast?.('Logged in as ' + u.trim(), '#55ff99');
-        }
+        console.error('❌ Privy login not available. Please check if React auth component is loaded.');
+        this.showToast?.('Login system not ready. Please refresh the page.', '#ff6b6b');
       }
     });
 
@@ -156,11 +159,16 @@ export default class MainMenuScene extends Phaser.Scene {
     
     if (authenticated && (address || username)) {
       this.isLoggedIn = true;
+      // Update localStorage to match Privy state
+      localStorage.setItem('mgid_user', username || address);
       const displayName = username || address?.slice(0, 6) + '...' + address?.slice(-4);
-      this.showToast?.('Logged in as ' + displayName, '#55ff99');
+      this.showToast?.('Successfully logged in as ' + displayName, '#55ff99');
+      console.log('✅ Privy login successful:', { address, username });
     } else {
       this.isLoggedIn = false;
       localStorage.removeItem('mgid_user');
+      this.showToast?.('Logged out successfully', '#ffaa00');
+      console.log('💪 Privy logout completed');
     }
   }
 

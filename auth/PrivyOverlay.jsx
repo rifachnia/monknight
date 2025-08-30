@@ -69,17 +69,6 @@ function AuthButton() {
     })();
   }, [ready, authenticated, user]);
 
-  // Expose login function globally for game to use
-  useEffect(() => {
-    window.privyLogin = login;
-    window.privyLogout = logout;
-    
-    return () => {
-      delete window.privyLogin;
-      delete window.privyLogout;
-    };
-  }, [login, logout]);
-
   return (
     <div style={{ pointerEvents: "auto" }}>
       {!authenticated ? (
