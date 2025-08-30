@@ -3,109 +3,323 @@ import { timeAttack } from './time_attack.js';
 import { hasUsername } from './game.js';
 import { saveSession, loadSession, clearSession, isLoggedIn, mockLogin, mockLogout, getCurrentUser } from './session.js';
 
-class MainMenuScene extends Phaser.Scene {
+export default class MainMenuScene extends Phaser.Scene {
   constructor() {
     super({ key: 'MainMenu' });
+    this.isLoggedIn = false;
   }
 
   preload() {
-    // Ganti path sesuai tempat kamu simpan gambar
+    // Load background image if available
     this.load.image('mainmenu', 'assets/mainmenu.png');
   }
 
   create() {
-    // Tampilkan background main menu
-    const bg = this.add.image(this.scale.width / 2, this.scale.height / 2, 'mainmenu');
-    bg.setOrigin(0.5);
-    bg.setDisplaySize(this.scale.width, this.scale.height);
+    // Check environment
+    const isDev = process.env.NODE_ENV !== 'production';
+    
+    const centerX = this.cameras.main.centerX;
+    const centerY = this.cameras.main.centerY;
+    const screenWidth = this.cameras.main.width;
+    const screenHeight = this.cameras.main.height;
 
-    // --- Posisi tombol (manual, karena gambar static) ---
-    const startBtnArea = this.add.zone(this.scale.width/2, this.scale.height/2 + 40, 250, 60);
-    const leaderboardBtnArea = this.add.zone(this.scale.width/2, this.scale.height/2 + 120, 250, 60);
+    // Background
+    if (this.textures.exists('mainmenu')) {
+      const bg = this.add.image(centerX, centerY, 'mainmenu');
+      bg.setOrigin(0.5);
+      bg.setDisplaySize(screenWidth, screenHeight);
+    }
 
-    startBtnArea.setOrigin(0.5).setInteractive();
-    leaderboardBtnArea.setOrigin(0.5).setInteractive();
+    // === TITLE ===
+    this.add.text(centerX, 150, 'MONKNIGHT', {
+      fontSize: '64px',
+      fontStyle: 'bold',
+      color: '#FFB800'
+    }).setOrigin(0.5);
 
-    timeAttack.loadBestLocal();   // <--- tambahkan ini
+    this.add.text(centerX, 220, 'TOP-DOWN RPG', {
+      fontSize: '28px',
+      color: '#FFFFFF'
+    }).setOrigin(0.5);
 
-    // Event klik
-    startBtnArea.on('pointerdown', () => {
-      try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
-      // mulai ke Game scene
-      this.scene.start('Game', { mapKey: 'town' });
+    // === START GAME BUTTON ===
+    this.startBtn = this.add.text(centerX, centerY, 'START GAME', {
+      fontSize: '28px',
+      backgroundColor: '#002244',
+      color: '#FFFFFF',
+      padding: { x: 20, y: 10 }
+    }).setOrigin(0.5).setInteractive();
+
+    // === LEADERBOARD BUTTON ===
+    this.leaderBtn = this.add.text(centerX, centerY + 80, 'LEADERBOARD', {
+      fontSize: '28px',
+      backgroundColor: '#002244',
+      color: '#FFFFFF',
+      padding: { x: 20, y: 10 }
+    }).setOrigin(0.5).setInteractive();
+
+    // === HOW TO PLAY BUTTON (Bottom-left) ===
+    const howToPlayText = this.add.text(20, screenHeight - 30, 'How to Play?', {
+      fontSize: '20px',
+      color: '#ffffff'
+    }).setOrigin(0, 1).setInteractive();
+
+    // === STATUS TEXT ===
+    this.statusText = this.add.text(centerX, centerY + 160, 'Not logged in', {
+      fontSize: '16px',
+      color: '#999'
+    }).setOrigin(0.5);
+
+    // Load initial state
+    timeAttack.loadBestLocal();
+    this.updateLoginState();
+
+    // === ENVIRONMENT-BASED AUTHENTICATION ===
+    if (isDev) {
+      this.createDevAuthUI(screenWidth, screenHeight);
+      
+      // Dev mode indicator
+      this.add.text(centerX, screenHeight - 60, '(Dev Mode - Mock Authentication)', {
+        fontSize: '14px',
+        color: '#bbb'
+      }).setOrigin(0.5);
+    } else {
+      this.createProdAuthUI(screenWidth, screenHeight);
+    }
+
+    // === BUTTON EVENT HANDLERS ===
+    this.startBtn.on('pointerdown', () => {
+      if (this.isLoggedIn) {
+        try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
+        this.scene.start('Game', { mapKey: 'town' });
+      } else {
+        alert('Please login first!');
+      }
     });
 
-    leaderboardBtnArea.on('pointerdown', () => {
+    this.leaderBtn.on('pointerdown', () => {
       try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
-      // buka Leaderboard sebagai overlay
-      this.scene.launch('Leaderboard');
-      this.scene.bringToTop('Leaderboard');
-      this.scene.pause();
+      if (this.isLoggedIn) {
+        this.scene.launch('Leaderboard');
+        this.scene.bringToTop('Leaderboard');
+        this.scene.pause();
+      } else {
+        alert('Please login to view leaderboard!');
+      }
     });
 
-    // Cursor hover effect
-    startBtnArea.on('pointerover', () => this.input.setDefaultCursor('pointer'));
-    startBtnArea.on('pointerout', () => this.input.setDefaultCursor('default'));
-    leaderboardBtnArea.on('pointerover', () => this.input.setDefaultCursor('pointer'));
-    leaderboardBtnArea.on('pointerout', () => this.input.setDefaultCursor('default'));
+    // === HOW TO PLAY POPUP ===
+    this.createHowToPlayPopup(howToPlayText, centerX, centerY);
 
-    // Keyboard shortcut
+    // === KEYBOARD SHORTCUTS ===
     this.input.keyboard.on('keydown-ENTER', () => {
-      try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
-      this.scene.start('Game', { mapKey: 'town' });
+      if (this.isLoggedIn) {
+        try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
+        this.scene.start('Game', { mapKey: 'town' });
+      }
     });
+
     this.input.keyboard.on('keydown-L', () => {
-      try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
-      if (!this.scene.isActive('Leaderboard')) {
+      if (this.isLoggedIn && !this.scene.isActive('Leaderboard')) {
+        try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
         this.scene.launch('Leaderboard');
         this.scene.bringToTop('Leaderboard');
         this.scene.pause();
       }
     });
+  }
 
-    // === NEW: Tombol How to Play (kiri bawah) ===
-    const howToPlayText = this.add.text(20, this.scale.height - 30, 'How to Play?', {
-      fontSize: '20px',
-      color: '#ffffff'
-    }).setOrigin(0, 1).setInteractive();
+  // Create Development Authentication UI
+  createDevAuthUI(screenWidth, screenHeight) {
+    // Mock Login button (bottom-right)
+    this.loginBtn = this.add.text(
+      screenWidth - 20,
+      screenHeight - 100,
+      'Mock Login (Dev)',
+      {
+        fontSize: '18px',
+        backgroundColor: '#5533aa',
+        color: '#FFFFFF',
+        padding: { x: 12, y: 6 }
+      }
+    ).setOrigin(1, 1).setInteractive();
 
-    // === NEW: Register Username Button ===
-    this.registerBtn = this.add.text(400, 440, "Register Username", {
-      fontSize: "20px",
-      fill: "#fff",
-      backgroundColor: "#4f46e5",
-      padding: { x: 12, y: 6 }
-    })
-      .setOrigin(0.5)
-      .setInteractive()
-      .on("pointerdown", () => {
-        try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
-        window.open("https://monad-games-id-site.vercel.app/", "_blank");
-      });
-
-    // Tampilkan tombol hanya jika username belum ada
-    this.registerBtn.setVisible(!hasUsername());
-
-    // Update visibility kalau status auth berubah (setelah login atau setelah refresh data)
-    window.addEventListener("monknight-auth", () => {
-      this.registerBtn.setVisible(!hasUsername());
+    this.loginBtn.on('pointerdown', async () => {
+      const username = await this.doMockLogin();
+      if (username) {
+        this.isLoggedIn = true;
+        this.updateLoginState();
+      }
     });
 
-    // Hover effects for register button
-    this.registerBtn.on('pointerover', () => {
+    // Register Username button (only if not logged in)
+    this.registerBtn = this.add.text(
+      screenWidth - 20,
+      screenHeight - 140,
+      'Register Username',
+      {
+        fontSize: '16px',
+        backgroundColor: '#4f46e5',
+        color: '#FFFFFF',
+        padding: { x: 10, y: 5 }
+      }
+    ).setOrigin(1, 1).setInteractive();
+
+    this.registerBtn.on('pointerdown', () => {
+      window.open('https://monad-games-id-site.vercel.app/', '_blank');
+    });
+
+    // Hover effects
+    this.addHoverEffects(this.loginBtn, '#5533aa', '#6644bb');
+    this.addHoverEffects(this.registerBtn, '#4f46e5', '#5856eb');
+  }
+
+  // Create Production Authentication UI
+  createProdAuthUI(screenWidth, screenHeight) {
+    // Monad Games ID login button (bottom-right)
+    this.loginBtn = this.add.text(
+      screenWidth - 20,
+      screenHeight - 100,
+      'Login with Monad Games ID',
+      {
+        fontSize: '18px',
+        backgroundColor: '#5533aa',
+        color: '#FFFFFF',
+        padding: { x: 12, y: 6 }
+      }
+    ).setOrigin(1, 1).setInteractive();
+
+    this.loginBtn.on('pointerdown', async () => {
+      // TODO: Replace with Privy SDK call
+      await this.startMonadLogin();
+    });
+
+    // Hover effects
+    this.addHoverEffects(this.loginBtn, '#5533aa', '#6644bb');
+  }
+
+  // Update login state and UI
+  updateLoginState() {
+    const session = loadSession();
+    this.isLoggedIn = !!(session && session.userId);
+    
+    if (this.isLoggedIn) {
+      // Enable buttons
+      this.startBtn.setAlpha(1);
+      this.startBtn.setInteractive();
+      this.leaderBtn.setAlpha(1);
+      
+      // Update status
+      this.statusText.setText(`Logged in as ${session.username}`);
+      this.statusText.setColor('#90EE90');
+      
+      // Update login button text
+      if (this.loginBtn) {
+        this.loginBtn.setText('Logout');
+      }
+      
+      // Hide register button if exists
+      if (this.registerBtn) {
+        this.registerBtn.setVisible(false);
+      }
+    } else {
+      // Disable buttons
+      this.startBtn.setAlpha(0.5);
+      this.startBtn.disableInteractive();
+      this.leaderBtn.setAlpha(0.5);
+      
+      // Update status
+      this.statusText.setText('Please login first');
+      this.statusText.setColor('#ff6666');
+      
+      // Update login button text
+      if (this.loginBtn) {
+        const isDev = process.env.NODE_ENV !== 'production';
+        this.loginBtn.setText(isDev ? 'Mock Login (Dev)' : 'Login with Monad Games ID');
+      }
+      
+      // Show register button if exists
+      if (this.registerBtn) {
+        this.registerBtn.setVisible(true);
+      }
+    }
+  }
+
+  // Mock login for development
+  async doMockLogin() {
+    const current = loadSession();
+    if (current) {
+      // Logout
+      const result = mockLogout();
+      if (result.success) {
+        this.updateLoginState();
+        return null;
+      }
+    } else {
+      // Login
+      const username = window.prompt('Enter username (dev login):', 'Monknight');
+      if (username && username.trim()) {
+        const result = await mockLogin(username.trim());
+        
+        if (result.success) {
+          // Update game's player identity for backward compatibility
+          window.MONKNIGHT_AUTH = {
+            address: result.session.walletAddress,
+            username: result.session.username
+          };
+          window.dispatchEvent(new CustomEvent('monknight-auth', {
+            detail: {
+              address: result.session.walletAddress,
+              username: result.session.username
+            }
+          }));
+          
+          return result.session.username;
+        } else {
+          alert('Login failed: ' + result.error);
+          return null;
+        }
+      }
+    }
+    return null;
+  }
+
+  // Production Monad Games ID login
+  async startMonadLogin() {
+    try {
+      // TODO: Replace with actual Privy SDK integration
+      console.log('Starting Monad Games ID login...');
+      alert('Monad Games ID integration coming soon!\nUsing mock login for now.');
+      
+      // For now, fallback to mock login
+      return await this.doMockLogin();
+    } catch (error) {
+      console.error('Monad login error:', error);
+      alert('Login failed. Please try again.');
+    }
+  }
+
+  // Add hover effects to buttons
+  addHoverEffects(button, normalColor, hoverColor) {
+    button.on('pointerover', () => {
       this.input.setDefaultCursor('pointer');
-      this.registerBtn.setStyle({ backgroundColor: '#5856eb' });
+      button.setStyle({ backgroundColor: hoverColor });
     });
-    this.registerBtn.on('pointerout', () => {
+    button.on('pointerout', () => {
       this.input.setDefaultCursor('default');
-      this.registerBtn.setStyle({ backgroundColor: '#4f46e5' });
+      button.setStyle({ backgroundColor: normalColor });
     });
+  }
 
-    // Popup panel (hidden default)
-    const panel = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, 420, 280, 0x000000, 0.85)
+  // Create How to Play popup
+  createHowToPlayPopup(howToPlayText, centerX, centerY) {
+    // Popup panel (hidden by default)
+    const panel = this.add.rectangle(centerX, centerY, 420, 280, 0x000000, 0.85)
       .setStrokeStyle(2, 0xffffff)
-      .setVisible(false);
-    const instructions = this.add.text(this.scale.width / 2, this.scale.height / 2, 
+      .setVisible(false)
+      .setDepth(1000);
+      
+    const instructions = this.add.text(centerX, centerY, 
       `F = Attack / Basic Attack\n` +
       `D = Flame Rocket Skill\n` +
       `SPACE = Dodge\n` +
@@ -114,12 +328,12 @@ class MainMenuScene extends Phaser.Scene {
       `When your character outline is white,\n` +
       `it means you are invulnerable.`, 
       { fontSize: '18px', color: '#ffffff', align: 'center' }
-    ).setOrigin(0.5).setVisible(false);
+    ).setOrigin(0.5).setVisible(false).setDepth(1001);
 
-    const closeText = this.add.text(this.scale.width / 2, this.scale.height / 2 + 110, '[ Close ]', {
+    const closeText = this.add.text(centerX, centerY + 110, '[ Close ]', {
       fontSize: '18px',
       color: '#ff0000'
-    }).setOrigin(0.5).setInteractive().setVisible(false);
+    }).setOrigin(0.5).setInteractive().setVisible(false).setDepth(1001);
 
     howToPlayText.on('pointerdown', () => {
       try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
@@ -134,113 +348,15 @@ class MainMenuScene extends Phaser.Scene {
       instructions.setVisible(false);
       closeText.setVisible(false);
     });
-
-    // === NEW: Mock Authentication UI ===
-    this.createLoginUI();
-  }
-
-  // Create Login/Logout UI for development
-  createLoginUI() {
-    const centerX = this.cameras.main.centerX;
-    const baseY = this.cameras.main.centerY + 200; // Below other buttons
-
-    // Login/Logout Button
-    this.loginText = this.add.text(centerX, baseY, 'Login with Monad Games ID', {
-      fontFamily: 'Arial', 
-      fontSize: '18px', 
-      color: '#ffffff', 
-      backgroundColor: '#4f46e5',
-      padding: { x: 12, y: 8 }
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-
-    // Status Text
-    this.statusText = this.add.text(centerX, baseY + 40, '', {
-      fontFamily: 'Arial', 
-      fontSize: '14px', 
-      color: '#a5e1ff'
-    }).setOrigin(0.5);
-
-    // Dev Mode Indicator
-    this.add.text(centerX, baseY + 70, '(Dev Mode - Mock Authentication)', {
-      fontFamily: 'Arial', 
-      fontSize: '12px', 
-      color: '#888888'
-    }).setOrigin(0.5);
-
-    // Update UI based on current session
-    this.updateLoginUI();
-
-    // Handle login/logout clicks
-    this.loginText.on('pointerup', async () => {
-      const current = loadSession();
-      if (current) {
-        // Logout
-        const result = mockLogout();
-        if (result.success) {
-          this.updateLoginUI();
-        }
-      } else {
-        // Login
-        try {
-          // DEV: Use prompt for now, will be replaced with Privy flow
-          const username = prompt('Enter username (dev login):', 'Monknight');
-          if (username && username.trim()) {
-            this.statusText.setText('Logging in...');
-            const result = await mockLogin(username.trim());
-            
-            if (result.success) {
-              this.updateLoginUI();
-              
-              // Update game's player identity for backward compatibility
-              window.MONKNIGHT_AUTH = {
-                address: result.session.walletAddress,
-                username: result.session.username
-              };
-              window.dispatchEvent(new CustomEvent('monknight-auth', {
-                detail: {
-                  address: result.session.walletAddress,
-                  username: result.session.username
-                }
-              }));
-              
-            } else {
-              this.statusText.setText('Login failed: ' + result.error);
-            }
-          }
-        } catch (e) {
-          this.statusText.setText('Login error');
-          console.error('Login error:', e);
-        }
-      }
+    
+    // Add hover effect to How to Play
+    howToPlayText.on('pointerover', () => {
+      this.input.setDefaultCursor('pointer');
+      howToPlayText.setStyle({ color: '#ffff00' });
     });
-
-    // Hover effects
-    this.loginText.on('pointerover', () => {
-      this.loginText.setStyle({ backgroundColor: '#5856eb' });
+    howToPlayText.on('pointerout', () => {
+      this.input.setDefaultCursor('default');
+      howToPlayText.setStyle({ color: '#ffffff' });
     });
-    this.loginText.on('pointerout', () => {
-      this.loginText.setStyle({ backgroundColor: '#4f46e5' });
-    });
-
-    // Listen for session changes from other components
-    window.addEventListener('mk-session-changed', () => {
-      this.updateLoginUI();
-    });
-  }
-
-  // Update login UI based on current session state
-  updateLoginUI() {
-    const session = loadSession();
-    if (session) {
-      this.loginText.setText('Logout');
-      this.statusText.setText(`Logged in as ${session.username}`);
-      this.statusText.setColor('#90EE90'); // Light green for logged in
-    } else {
-      this.loginText.setText('Login with Monad Games ID');
-      this.statusText.setText('Not logged in');
-      this.statusText.setColor('#a5e1ff'); // Light blue for not logged in
-    }
   }
 }
-
-export default MainMenuScene;

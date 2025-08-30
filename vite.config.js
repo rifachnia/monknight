@@ -8,7 +8,8 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     define: {
       // Make environment variables available at build time
-      'process.env.NEXT_PUBLIC_PRIVY_APP_ID': JSON.stringify(env.NEXT_PUBLIC_PRIVY_APP_ID || 'cmex2ejkj00psjx0bodrlnx6d')
+      'process.env.NEXT_PUBLIC_PRIVY_APP_ID': JSON.stringify(env.NEXT_PUBLIC_PRIVY_APP_ID || 'cmex2ejkj00psjx0bodrlnx6d'),
+      'process.env.NODE_ENV': JSON.stringify(mode === 'production' ? 'production' : 'development')
     },
     envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
     build: {
