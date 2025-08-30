@@ -264,7 +264,7 @@ function getBossPhaseMultiplier(hp) {
 
 
 // UI player
-let uiGfx, uiTextPlayer;
+let uiGfx, uiTextPlayer, playerUsernameText;
 
 // Summon control
 let minionsSummoned = false;
@@ -636,6 +636,20 @@ function create(data) {
   // UI player (kiri atas)
   initUI.call(this);
   refreshUI();
+  
+  // Initialize username text that follows the player
+  initPlayerUsernameText.call(this);
+  
+  // Listen for authentication changes to update username
+  const handleAuthChange = () => {
+    initPlayerUsernameText.call(this);
+  };
+  window.addEventListener('monknight-auth', handleAuthChange);
+  
+  // Store cleanup handler
+  this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+    window.removeEventListener('monknight-auth', handleAuthChange);
+  });
 
   // === TIME ATTACK UI (kanan atas) — kecil, tambahan ===
   initTimeAttackUI.call(this);
@@ -659,7 +673,8 @@ function create(data) {
     try { uiTextTimer?.destroy(); } catch {}
     try { uiGfx?.destroy(); } catch {}
     try { uiTextPlayer?.destroy(); } catch {}
-    uiTextTimer = null; uiGfx = null; uiTextPlayer = null;
+    try { playerUsernameText?.destroy(); } catch {}
+    uiTextTimer = null; uiGfx = null; uiTextPlayer = null; playerUsernameText = null;
   });
 }
 
@@ -675,6 +690,7 @@ function update() {
     if (player?.body) player.setVelocity(0, 0);
     hideDodgeOutline();
     updateTimeAttackUI(this);
+    updatePlayerUsernameText();
     let ms = TA_getElapsed();
     if (typeof ms !== 'number') ms = taActive ? (this.time.now - taStartMs) : 0;
     updateScoreUI(this, ms);
@@ -710,6 +726,7 @@ function update() {
     if (player.anims.timeScale !== 1) player.anims.timeScale = 1;
     updateDodgeOutline();
     updateTimeAttackUI(this);
+    updatePlayerUsernameText();
     let ms = TA_getElapsed();
     if (typeof ms !== 'number') ms = taActive ? (this.time.now - taStartMs) : 0;
     updateScoreUI(this, ms);
@@ -849,6 +866,8 @@ function update() {
 
   // Update UI Time Attack tiap frame
   updateTimeAttackUI(this);
+  // Update username text position
+  updatePlayerUsernameText();
 }
 
 // ----------------- Helpers, UI, Damage, FB -----------------
@@ -1322,6 +1341,62 @@ function refreshUI() {
   const ratio = Phaser.Math.Clamp(playerHP / PLAYER_MAX_HP, 0, 1);
   uiGfx.fillStyle(0x31d27d, 1).fillRect(x+1, y+1, Math.floor((w-2)*ratio), h-2);
   uiTextPlayer.setText(`HP: ${Math.max(0, Math.ceil(playerHP))}/${PLAYER_MAX_HP}`);
+}
+
+// === PLAYER USERNAME TEXT ===
+function initPlayerUsernameText() {
+  // Clean up any existing username text
+  if (playerUsernameText) {
+    try { playerUsernameText.destroy(); } catch {}
+    playerUsernameText = null;
+  }
+  
+  // Get username from authentication system
+  const username = getPlayerUsername();
+  
+  if (username && player) {
+    // Create username text that follows the player
+    playerUsernameText = this.add.text(player.x, player.y + 25, username, {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 2,
+      align: 'center'
+    }).setOrigin(0.5, 0.5).setDepth(player.depth + 1);
+  }
+}
+
+function updatePlayerUsernameText() {
+  if (playerUsernameText && player) {
+    // Update position to follow player
+    playerUsernameText.setPosition(player.x, player.y + 25);
+    // Ensure username text is always on top
+    playerUsernameText.setDepth(player.depth + 1);
+  }
+}
+
+function getPlayerUsername() {
+  // Try multiple sources for username
+  if (window.MONKNIGHT_AUTH?.username) {
+    return window.MONKNIGHT_AUTH.username;
+  }
+  
+  if (PLAYER_USERNAME) {
+    return PLAYER_USERNAME;
+  }
+  
+  // Check localStorage
+  const storedUser = localStorage.getItem('mgid_user');
+  if (storedUser) {
+    // If it's a wallet address (starts with 0x), don't show it
+    if (storedUser.startsWith('0x')) {
+      return null; // Don't show wallet addresses as usernames
+    }
+    return storedUser;
+  }
+  
+  return null;
 }
 
 // === TIME ATTACK UI (kecil, kanan-atas) ===

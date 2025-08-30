@@ -45,83 +45,104 @@ function AuthIsland() {
       return;
     }
 
-    // Find cross-app account for Monad Games ID
-    const cross = user.linkedAccounts.find(
-      (acc) => acc && acc.type === "cross_app" && acc.providerApp?.id === "cmd8euall0037le0my79qpz42"
-    );
-
-    if (!cross || !cross.embeddedWallets || !Array.isArray(cross.embeddedWallets)) {
-      console.warn('⚠️ Cross-app account or embedded wallets not found:', cross);
-      return;
-    }
-
-    const address = cross.embeddedWallets[0]?.address || "";
-    if (!address) {
-      console.warn('⚠️ No wallet address found in cross-app account');
-      return;
-    }
-
-    setAddr(address);
-
-    // Fetch username with retry logic
-    (async () => {
-      let retryCount = 0;
-      const maxRetries = 3;
+    // Check if user has linkedAccounts
+    if (user.linkedAccounts.length > 0) {
+      // Get the cross app account created using Monad Games ID (following official docs pattern)
+      const crossAppAccount = user.linkedAccounts.filter(
+        account => account.type === "cross_app" && account.providerApp.id === "cmd8euall0037le0my79qpz42"
+      )[0];
       
-      const fetchWithRetry = async () => {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-          
-          const r = await fetch(
-            `https://monad-games-id-site.vercel.app/api/check-wallet?wallet=${address}`,
-            { signal: controller.signal }
-          );
-          
-          clearTimeout(timeoutId);
-          
-          if (!r.ok) {
-            throw new Error(`HTTP ${r.status}: ${r.statusText}`);
-          }
-          
-          const j = await r.json();
-          const username = j?.username || "";
-          setUname(username);
-          
-          // Store in localStorage for game compatibility
-          localStorage.setItem('mgid_user', username || address);
-          
-          // Publish to game
-          window.MONKNIGHT_AUTH = { address, username };
-          window.dispatchEvent(new CustomEvent("monknight-auth", { 
-            detail: { authenticated: true, address, username } 
-          }));
-          
-          console.log('✅ Privy authentication successful:', { address, username });
-          setInitError(null);
-          
-        } catch (e) {
-          console.error(`❌ check-wallet attempt ${retryCount + 1} failed:`, e);
-          
-          if (retryCount < maxRetries - 1) {
-            retryCount++;
-            console.log(`🔄 Retrying username fetch (${retryCount}/${maxRetries})...`);
-            setTimeout(fetchWithRetry, 1000 * retryCount); // Progressive delay
-          } else {
-            console.warn('⚠️ All username fetch attempts failed, using address only');
-            setUname("");
-            localStorage.setItem('mgid_user', address);
-            window.MONKNIGHT_AUTH = { address, username: "" };
-            window.dispatchEvent(new CustomEvent("monknight-auth", { 
-              detail: { authenticated: true, address, username: "" } 
-            }));
-            setInitError('Failed to fetch username');
-          }
+      if (!crossAppAccount) {
+        console.warn('⚠️ Cross-app account not found for Monad Games ID');
+        return;
+      }
+      
+      // The first embedded wallet created using Monad Games ID, is the wallet address
+      if (crossAppAccount.embeddedWallets.length > 0) {
+        const address = crossAppAccount.embeddedWallets[0].address;
+        if (!address) {
+          console.warn('⚠️ No wallet address found in cross-app account');
+          return;
         }
-      };
-      
-      await fetchWithRetry();
-    })();
+        setAddr(address);
+        
+        // Fetch username with retry logic
+        (async () => {
+          let retryCount = 0;
+          const maxRetries = 3;
+          
+          const fetchWithRetry = async () => {
+            try {
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+              
+              const r = await fetch(
+                `https://monad-games-id-site.vercel.app/api/check-wallet?wallet=${address}`,
+                { signal: controller.signal }
+              );
+              
+              clearTimeout(timeoutId);
+              
+              if (!r.ok) {
+                throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+              }
+              
+              const j = await r.json();
+              console.log('📡 API Response:', j);
+              
+              // Extract username according to official documentation
+              const username = j?.hasUsername ? (j?.user?.username || "") : "";
+              setUname(username);
+              
+              console.log('👤 Username extraction:', { 
+                hasUsername: j?.hasUsername, 
+                username, 
+                fullResponse: j 
+              });
+              
+              // Store in localStorage for game compatibility
+              localStorage.setItem('mgid_user', username || address);
+              
+              // Publish to game
+              window.MONKNIGHT_AUTH = { address, username };
+              window.dispatchEvent(new CustomEvent("monknight-auth", { 
+                detail: { authenticated: true, address, username } 
+              }));
+              
+              console.log('✅ Privy authentication successful:', { address, username });
+              setInitError(null);
+              
+            } catch (e) {
+              console.error(`❌ check-wallet attempt ${retryCount + 1} failed:`, e);
+              
+              if (retryCount < maxRetries - 1) {
+                retryCount++;
+                console.log(`🔄 Retrying username fetch (${retryCount}/${maxRetries})...`);
+                setTimeout(fetchWithRetry, 1000 * retryCount); // Progressive delay
+              } else {
+                console.warn('⚠️ All username fetch attempts failed, using address only');
+                setUname("");
+                localStorage.setItem('mgid_user', address);
+                window.MONKNIGHT_AUTH = { address, username: "" };
+                window.dispatchEvent(new CustomEvent("monknight-auth", { 
+                  detail: { authenticated: true, address, username: "" } 
+                }));
+                setInitError('Failed to fetch username');
+              }
+            }
+          };
+          
+          await fetchWithRetry();
+        })();
+      } else {
+        console.warn('⚠️ No embedded wallets found in cross-app account');
+        return;
+      }
+    } else {
+      console.warn('⚠️ You need to link your Monad Games ID account to continue.');
+      setInitError('You need to link your Monad Games ID account to continue.');
+      return;
+    }
   }, [authenticated, user, ready]);
 
   // Expose login/logout functions globally for game to use
@@ -193,18 +214,28 @@ function AuthIsland() {
     };
   }, [ready, login, logout, authenticated, loginWithCrossAppAccount]);
 
+  React.useEffect(() => {
+    // Position the auth component relative to game container
+    const gameContainer = document.getElementById('game-container');
+    if (gameContainer) {
+      const rect = gameContainer.getBoundingClientRect();
+      console.log('🎮 Game container bounds:', rect);
+    }
+  }, []);
+
   return (
-    <div style={{ position: "fixed", top: 12, left: 12, zIndex: 1000, fontFamily: "sans-serif" }}>
+    <>
       {/* Debug indicator */}
       <div style={{ 
-        position: 'absolute', 
-        top: -30, 
-        left: 0, 
+        position: 'fixed', 
+        top: 5, 
+        right: 5, 
         fontSize: '10px', 
         color: ready ? '#00ff00' : '#ffaa00',
         background: 'rgba(0,0,0,0.7)',
         padding: '2px 4px',
-        borderRadius: '2px'
+        borderRadius: '2px',
+        zIndex: 10000
       }}>
         React: {ready ? 'Ready' : 'Loading...'}
         {initError && (
@@ -214,52 +245,90 @@ function AuthIsland() {
         )}
       </div>
       
-      {!authenticated ? (
-        <button 
-          onClick={() => {
-            console.log('🎮 Logging in with Monad Games ID cross-app...');
-            loginWithCrossAppAccount({ appId: 'cmd8euall0037le0my79qpz42' });
-          }}
-          disabled={!ready}
-          style={{
-            opacity: ready ? 1 : 0.5,
-            cursor: ready ? 'pointer' : 'not-allowed',
-            padding: '8px 12px',
-            borderRadius: '6px',
-            border: 'none',
-            background: '#4f46e5',
-            color: 'white',
-            fontSize: '14px'
-          }}
-        >
-          {ready ? 'Sign in with Monad Games ID' : 'Loading...'}
-        </button>
-      ) : (
-        <div style={{ background: "rgba(0,0,0,.5)", padding: 8, borderRadius: 8, color: "#fff" }}>
-          <div style={{ fontSize: 12 }}>Wallet: {addr || "…"}</div>
-          <div style={{ fontSize: 12 }}>Username: {uname || "(none)"}</div>
-
-          {/* REMOVED: Register Username button to avoid UI overlap */}
-
+      {/* Wallet Indicator - Top Left Corner */}
+      {authenticated && (addr || uname) && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          left: '20px',
+          background: 'rgba(0, 0, 0, 0.8)',
+          border: '2px solid #4f46e5',
+          borderRadius: '8px',
+          padding: '12px',
+          color: '#ffffff',
+          fontFamily: 'monospace',
+          fontSize: '12px',
+          zIndex: 10000,
+          minWidth: '280px'
+        }}>
+          <div style={{ marginBottom: '8px' }}>
+            Wallet: {addr ? (addr.length > 10 ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : addr) : 'Connected'}
+          </div>
+          <div style={{ marginBottom: '12px' }}>
+            Username: {uname || '(none)'}
+          </div>
           <button 
             onClick={logout} 
             style={{ 
-              marginTop: 6, 
-              marginLeft: 8,
-              padding: '4px 8px',
+              padding: '6px 12px',
               borderRadius: '4px',
               border: 'none',
               background: '#dc2626',
               color: 'white',
               fontSize: '12px',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              fontFamily: 'monospace'
             }}
+            onMouseOver={(e) => e.target.style.background = '#ef4444'}
+            onMouseOut={(e) => e.target.style.background = '#dc2626'}
           >
             Logout
           </button>
         </div>
       )}
-    </div>
+      
+      {/* Credit Text - Bottom Center */}
+      <div style={{
+        position: 'fixed',
+        bottom: '20px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        color: '#ffa500',
+        fontFamily: 'monospace',
+        fontSize: '14px',
+        zIndex: 10000,
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        textShadow: '1px 1px 2px rgba(0, 0, 0, 0.8)'
+      }}
+      onClick={() => window.open('https://x.com/Rifachnia_', '_blank', 'noopener,noreferrer')}
+      onMouseOver={(e) => {
+        e.target.style.color = '#ffff00';
+        e.target.style.transform = 'translateX(-50%) scale(1.05)';
+      }}
+      onMouseOut={(e) => {
+        e.target.style.color = '#ffa500';
+        e.target.style.transform = 'translateX(-50%) scale(1)';
+      }}
+      >
+        Created by Rifachnia
+      </div>
+
+      {/* Hidden login button for fallback */}
+      {!authenticated && (
+        <div style={{ display: 'none' }}>
+          <button 
+            onClick={() => {
+              console.log('🎮 Logging in with Monad Games ID cross-app...');
+              loginWithCrossAppAccount({ appId: 'cmd8euall0037le0my79qpz42' });
+            }}
+            disabled={!ready}
+          >
+            {ready ? 'Sign in with Monad Games ID' : 'Loading...'}
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 

@@ -39,7 +39,7 @@ function formatTime(ms) {
 }
 
 export default class LeaderboardScene extends Phaser.Scene {
-  constructor() { super('Leaderboard'); }
+  constructor() { super('LeaderboardScene'); }
 
   create() {
     const W = this.scale.width, H = this.scale.height;

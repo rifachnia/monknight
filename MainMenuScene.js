@@ -122,10 +122,10 @@ export default class MainMenuScene extends Phaser.Scene {
 
     const cam = this.cameras.main;
 
-    // ========= HIT-ZONE UNTUK TOMBOL START (menutup tombol pixel besar) =========
-    const START_WIDTH  = 520;   
-    const START_HEIGHT = 110;   
-    const START_Y      = centerY; 
+    // ========= HIT-ZONE UNTUK TOMBOL START (match orange box precisely) =========
+    const START_WIDTH  = 480;   // Reduced to match orange border width exactly
+    const START_HEIGHT = 75;    // Slightly adjusted height
+    const START_Y      = centerY + 50; // Move up by 5px (was +55, now +50)
 
     const startHit = this.add.zone(centerX, START_Y, START_WIDTH, START_HEIGHT)
       .setOrigin(0.5)
@@ -139,9 +139,11 @@ export default class MainMenuScene extends Phaser.Scene {
       this.startGame();
     });
 
-    // ========= HIT-ZONE LEADERBOARD =========
-    const LB_Y = centerY + 120;
-    const lbHit = this.add.zone(centerX, LB_Y, START_WIDTH, START_HEIGHT)
+    // ========= HIT-ZONE LEADERBOARD (match orange box precisely) =========
+    const LB_WIDTH = 480;       // Same width as START for consistency
+    const LB_HEIGHT = 75;       // Same height as START
+    const LB_Y = centerY + 150; // Move down by 10px (was +140, now +150)
+    const lbHit = this.add.zone(centerX, LB_Y, LB_WIDTH, LB_HEIGHT)
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
 
@@ -153,26 +155,36 @@ export default class MainMenuScene extends Phaser.Scene {
       this.scene.start('LeaderboardScene');
     });
 
-    // ====== TOMBOL LOGIN (kanan-bawah, jangan menutup tombol START) ======
-    const loginBtn = this.add.text(
+    // ====== LOGIN BUTTON (bottom-right, styled like other game UI) ======
+    this.loginBtn = this.add.text(
       cam.width - 20, cam.height - 20,
-      'Login with Monad Games ID',
+      'Sign in with Monad Games ID',
       { fontFamily: 'pixelFont', fontSize: '18px',
-        backgroundColor: '#5533aa', color: '#fff',
+        backgroundColor: '#4f46e5', color: '#fff',
         padding: { x:12, y:6 } }
-    ).setOrigin(1,1).setInteractive();
+    ).setOrigin(1,1).setInteractive({ useHandCursor: true });
 
-    loginBtn.on('pointerdown', () => {
-      this.attemptLogin();
+    // Only show login button if not logged in
+    this.loginBtn.setVisible(!this.isLoggedIn);
+
+    this.loginBtn.on('pointerdown', () => {
+      // Call React authentication function
+      if (window.privyLoginMonad) {
+        window.privyLoginMonad();
+      } else if (window.privyLogin) {
+        window.privyLogin();
+      } else {
+        this.showToast?.('Authentication system loading...', '#ffaa00');
+      }
     });
     
     // Enhanced authentication event listening
     window.addEventListener('monknight-auth', this.handleAuthChange);
 
-    // jaga posisi tombol login saat resize
+    // Handle window resize to keep button positioned correctly
     this.scale.on('resize', (g) => {
       const w = g?.width ?? cam.width, h = g?.height ?? cam.height;
-      loginBtn.setPosition(w - 20, h - 20);
+      this.loginBtn.setPosition(w - 20, h - 20);
     });
   }
 
@@ -327,6 +339,10 @@ export default class MainMenuScene extends Phaser.Scene {
     
     if (authenticated && (address || username)) {
       this.isLoggedIn = true;
+      // Hide login button when logged in
+      if (this.loginBtn) {
+        this.loginBtn.setVisible(false);
+      }
       // Update localStorage to match Privy state
       localStorage.setItem('mgid_user', username || address);
       const displayName = username || address?.slice(0, 6) + '...' + address?.slice(-4);
@@ -334,9 +350,14 @@ export default class MainMenuScene extends Phaser.Scene {
       console.log('✅ Privy login successful:', { address, username });
     } else {
       this.isLoggedIn = false;
+      // Show login button when logged out
+      if (this.loginBtn) {
+        this.loginBtn.setVisible(true);
+      }
+      // Clear localStorage
       localStorage.removeItem('mgid_user');
       this.showToast?.('Logged out successfully', '#ffaa00');
-      console.log('💪 Privy logout completed');
+      console.log('🔓 Privy logout successful');
     }
   }
 
@@ -376,7 +397,7 @@ export default class MainMenuScene extends Phaser.Scene {
   }
 
   showToast(msg, color = '#ff6b6b') {
-    const t = this.add.text(this.cameras.main.centerX, this.cameras.main.centerY + 140,
+    const t = this.add.text(this.cameras.main.centerX, this.cameras.main.centerY - 20,
       msg, { fontFamily:'pixelFont', fontSize:'18px', color }).setOrigin(0.5);
     this.tweens.add({ targets:t, alpha:0, duration:1400, onComplete:() => t.destroy() });
   }
@@ -384,23 +405,29 @@ export default class MainMenuScene extends Phaser.Scene {
   // Create How to Play popup
   createHowToPlayPopup(howToPlayText, centerX, centerY) {
     // Popup panel (hidden by default)
-    const panel = this.add.rectangle(centerX, centerY, 420, 280, 0x000000, 0.85)
+    const panel = this.add.rectangle(centerX, centerY, 500, 450, 0x000000, 0.85)
       .setStrokeStyle(2, 0xffffff)
       .setVisible(false)
       .setDepth(1000);
       
     const instructions = this.add.text(centerX, centerY, 
-      `F = Attack / Basic Attack\n` +
-      `D = Flame Rocket Skill\n` +
-      `SPACE = Dodge\n` +
-      `Hold SHIFT = Sprint\n\n` +
-      `Dodge grants a short iframe.\n` +
-      `When your character outline is white,\n` +
-      `it means you are invulnerable.`, 
-      { fontSize: '18px', color: '#ffffff', align: 'center' }
+      `Use the arrow keys for movement.\n\n` +
+      `F = Attack\n` +
+      `D = Flame Rocket skill\n` +
+      `Space = Dodge\n` +
+      `Hold Shift while moving = Sprint\n\n` +
+      `Dodge grants short iFrame.\n` +
+      `When your character outline is white, it means you are invulnerable.\n\n` +
+      `When the game starts, walk straight to the right where the underground portal is to go directly to the boss room.\n` +
+      `Defeat the boss as quickly as possible to get a higher score!\n\n` +
+      `Boss Skills:\n\n` +
+      `Above 50%: Fireball\n\n` +
+      `Under 50%: Multi-fireball with explosion. If you get hit, the damage will doubled.\n\n` +
+      `Under 30%: The boss will spawn minions.`, 
+      { fontSize: '15px', color: '#ffffff', align: 'center', wordWrap: { width: 460 } }
     ).setOrigin(0.5).setVisible(false).setDepth(1001);
 
-    const closeText = this.add.text(centerX, centerY + 110, '[ Close ]', {
+    const closeText = this.add.text(centerX, centerY + 190, '[ Close ]', {
       fontSize: '18px',
       color: '#ff0000'
     }).setOrigin(0.5).setInteractive().setVisible(false).setDepth(1001);

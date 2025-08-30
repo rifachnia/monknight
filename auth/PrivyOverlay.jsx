@@ -31,42 +31,55 @@ function AuthButton() {
       return;
     }
 
-    // Find cross-app account for Monad Games ID
-    const cross = Array.isArray(user.linkedAccounts)
-      ? user.linkedAccounts.find(
-          (a) => a?.type === "cross_app" && a?.providerApp?.id === CROSS_APP_ID
-        )
-      : null;
-
-    const addr = cross?.embeddedWallets?.[0]?.address || "";
-    setAddress(addr);
-
-    (async () => {
-      if (addr) {
-        const uname = await fetchUsername(addr);
-        setUsername(uname || "");
-        
-        // Update localStorage for game compatibility
-        localStorage.setItem('mgid_user', uname || addr);
-        
-        // Update global auth state
-        window.MONKNIGHT_AUTH = { address: addr, username: uname || null };
-        
-        // Dispatch auth event for game
-        window.dispatchEvent(new CustomEvent('monknight-auth', { 
-          detail: { 
-            authenticated: true, 
-            address: addr, 
-            username: uname || null 
-          } 
-        }));
-
-        // Legacy callback support
-        if (window.gameAuth?.onLogin) {
-          window.gameAuth.onLogin({ address: addr, username: uname || null });
-        }
+    // Check if user has linkedAccounts
+    if (user.linkedAccounts.length > 0) {
+      // Get the cross app account created using Monad Games ID (following official docs pattern)
+      const crossAppAccount = user.linkedAccounts.filter(
+        account => account.type === "cross_app" && account.providerApp.id === CROSS_APP_ID
+      )[0];
+      
+      if (!crossAppAccount) {
+        console.warn('⚠️ Cross-app account not found for Monad Games ID');
+        return;
       }
-    })();
+      
+      // The first embedded wallet created using Monad Games ID, is the wallet address
+      if (crossAppAccount.embeddedWallets.length > 0) {
+        const addr = crossAppAccount.embeddedWallets[0].address;
+        setAddress(addr);
+        
+        (async () => {
+          if (addr) {
+            const uname = await fetchUsername(addr);
+            setUsername(uname || "");
+            
+            // Update localStorage for game compatibility
+            localStorage.setItem('mgid_user', uname || addr);
+            
+            // Update global auth state
+            window.MONKNIGHT_AUTH = { address: addr, username: uname || null };
+            
+            // Dispatch auth event for game
+            window.dispatchEvent(new CustomEvent('monknight-auth', { 
+              detail: { 
+                authenticated: true, 
+                address: addr, 
+                username: uname || null 
+              } 
+            }));
+
+            // Legacy callback support
+            if (window.gameAuth?.onLogin) {
+              window.gameAuth.onLogin({ address: addr, username: uname || null });
+            }
+          }
+        })();
+      } else {
+        console.warn('⚠️ No embedded wallets found in cross-app account');
+      }
+    } else {
+      console.warn('⚠️ You need to link your Monad Games ID account to continue.');
+    }
   }, [ready, authenticated, user]);
 
   return (
