@@ -14,7 +14,7 @@ Players can log in with their Monad Games ID, fight bosses in time-attack battle
 ---
 
 ## 🕹️ How to Play
-1. Open the game at [monknight.vercel.app](https://monknight.vercel.app) *(after deployment)*  
+1. Open the game at [monknight.vercel.app](https://monknight.vercel.app) 
 2. Click **Start Game**  
 3. Sign in with your **Monad Games ID**  
 4. Defeat the boss as fast as you can — your score will be saved on-chain  
