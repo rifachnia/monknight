@@ -88,8 +88,14 @@ export default class MainMenuScene extends Phaser.Scene {
       privyLogout: !!window.privyLogout,
       privyReady: !!window.privyReady,
       monknightAuth: !!window.MONKNIGHT_AUTH,
-      localStorage: !!localStorage.getItem('mgid_user')
+      localStorage: !!localStorage.getItem('mgid_user'),
+      reactRoot: !!document.getElementById('root'),
+      timestamp: new Date().toISOString()
     });
+    
+    // Check if React scripts are loaded
+    const scripts = Array.from(document.scripts).map(s => s.src);
+    console.log('📦 Loaded scripts:', scripts.filter(s => s.includes('main') || s.includes('react')));
 
     // Listen for Privy ready event
     window.addEventListener('privy-ready', (event) => {
@@ -101,6 +107,24 @@ export default class MainMenuScene extends Phaser.Scene {
     setTimeout(() => {
       if (!window.privyReady) {
         console.log('⏳ Waiting for Privy to initialize... This may take a moment.');
+        
+        // Check again after more time
+        setTimeout(() => {
+          console.log('🔍 Second check - Privy status:', {
+            privyReady: !!window.privyReady,
+            privyLogin: !!window.privyLogin,
+            privyLogout: !!window.privyLogout,
+            rootElement: !!document.getElementById('root'),
+            reactErrors: 'Check console for React errors'
+          });
+          
+          if (!window.privyReady) {
+            console.warn('⚠️ Privy still not ready after 3 seconds. Possible issues:');
+            console.warn('1. React component failed to mount');
+            console.warn('2. Privy SDK failed to initialize');
+            console.warn('3. Environment/network issues');
+          }
+        }, 2000);
       }
     }, 1000);
 
@@ -170,6 +194,20 @@ export default class MainMenuScene extends Phaser.Scene {
           if (window.privyReady && window.privyLogin) {
             console.log('♾️ Privy became ready after delay');
             this.showToast?.('Authentication system ready! You can now login.', '#55ff99');
+          } else {
+            console.log('⚠️ Privy still not ready. Trying longer wait...');
+            this.showToast?.('Still loading... Please wait a few more seconds.', '#ffaa00');
+            
+            // Try one more time with even longer delay
+            setTimeout(() => {
+              if (window.privyReady && window.privyLogin) {
+                console.log('♾️ Privy ready after extended wait');
+                this.showToast?.('Authentication ready! Please try logging in again.', '#55ff99');
+              } else {
+                console.error('❌ Privy failed to initialize after extended wait');
+                this.showToast?.('Please refresh the page and try again.', '#ff6b6b');
+              }
+            }, 3000);
           }
         }, 2000);
       }
