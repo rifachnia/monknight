@@ -53,7 +53,17 @@ async function fetchBlockchainLeaderboard() {
 export default class LeaderboardScene extends Phaser.Scene {
   constructor() { super('LeaderboardScene'); }
 
-  create() {
+  create(data) {
+    // Notify React about scene change
+    window.dispatchEvent(new CustomEvent('phaser-scene-change', {
+      detail: { scene: 'LeaderboardScene' }
+    }));
+    
+    // Store data for post-game handling
+    this.postGame = data?.postGame || false;
+    this.finalScore = data?.finalScore || 0;
+    this.gameDuration = data?.gameDuration || 0;
+    
     const W = this.scale.width, H = this.scale.height;
     
     // Store current player address for highlighting
@@ -63,12 +73,16 @@ export default class LeaderboardScene extends Phaser.Scene {
     const bg = this.add.rectangle(W/2, H/2, W, H, 0x0a0f1f, 0.96).setScrollFactor(0);
 
     // Title
-    this.add.text(W/2, 64, 'BLOCKCHAIN LEADERBOARD', {
+    const titleText = this.postGame ? 'BOSS DEFEATED! 🏆' : 'BLOCKCHAIN LEADERBOARD';
+    this.add.text(W/2, 64, titleText, {
       fontFamily: 'monospace', fontSize: 32, color: '#ffe066'
     }).setOrigin(0.5, 0.5);
     
     // Subtitle
-    this.add.text(W/2, 92, 'Global scores from all players', {
+    const subtitleText = this.postGame 
+      ? `Your Score: ${this.finalScore} | Time: ${Math.round(this.gameDuration/1000)}s`
+      : 'Global scores from all players';
+    this.add.text(W/2, 92, subtitleText, {
       fontFamily: 'monospace', fontSize: 16, color: '#8fd3ff'
     }).setOrigin(0.5, 0.5);
     
@@ -234,17 +248,51 @@ export default class LeaderboardScene extends Phaser.Scene {
   createBackButton() {
     const W = this.scale.width, H = this.scale.height;
     
-    // Back button
-    const btn = this.add.rectangle(W/2, H - 50, 200, 44, 0x123456, 0.8)
-      .setStrokeStyle(2, 0xffffff, 0.9)
-      .setInteractive({ useHandCursor: true });
+    if (this.postGame) {
+      // Post-game: Show Restart and Return to Main Menu buttons
       
-    this.add.text(W/2, H - 50, 'BACK TO MENU', { 
-      fontFamily:'monospace', fontSize:18, color:'#ffffff' 
-    }).setOrigin(0.5);
-    
-    btn.on('pointerover', () => btn.setFillStyle(0x1b2a6b, 0.9));
-    btn.on('pointerout',  () => btn.setFillStyle(0x123456, 0.8));
-    btn.on('pointerup',   () => this.scene.start('MainMenu'));
+      // Restart button (left)
+      const restartBtn = this.add.rectangle(W/2 - 120, H - 50, 200, 44, 0x2d8a2f, 0.8)
+        .setStrokeStyle(2, 0xffffff, 0.9)
+        .setInteractive({ useHandCursor: true });
+        
+      this.add.text(W/2 - 120, H - 50, 'RESTART', { 
+        fontFamily:'monospace', fontSize:18, color:'#ffffff' 
+      }).setOrigin(0.5);
+      
+      restartBtn.on('pointerover', () => restartBtn.setFillStyle(0x3fa843, 0.9));
+      restartBtn.on('pointerout',  () => restartBtn.setFillStyle(0x2d8a2f, 0.8));
+      restartBtn.on('pointerup', () => {
+        // Same as clicking START GAME in main menu - start the game scene in battle mode
+        this.scene.start('Game', { mapKey: 'battle', spawn: { x: 160, y: 350 } });
+      });
+      
+      // Return to Main Menu button (right)
+      const menuBtn = this.add.rectangle(W/2 + 120, H - 50, 200, 44, 0x123456, 0.8)
+        .setStrokeStyle(2, 0xffffff, 0.9)
+        .setInteractive({ useHandCursor: true });
+        
+      this.add.text(W/2 + 120, H - 50, 'MAIN MENU', { 
+        fontFamily:'monospace', fontSize:18, color:'#ffffff' 
+      }).setOrigin(0.5);
+      
+      menuBtn.on('pointerover', () => menuBtn.setFillStyle(0x1b2a6b, 0.9));
+      menuBtn.on('pointerout',  () => menuBtn.setFillStyle(0x123456, 0.8));
+      menuBtn.on('pointerup',   () => this.scene.start('MainMenu'));
+      
+    } else {
+      // Normal leaderboard: Show single back button
+      const btn = this.add.rectangle(W/2, H - 50, 200, 44, 0x123456, 0.8)
+        .setStrokeStyle(2, 0xffffff, 0.9)
+        .setInteractive({ useHandCursor: true });
+        
+      this.add.text(W/2, H - 50, 'BACK TO MENU', { 
+        fontFamily:'monospace', fontSize:18, color:'#ffffff' 
+      }).setOrigin(0.5);
+      
+      btn.on('pointerover', () => btn.setFillStyle(0x1b2a6b, 0.9));
+      btn.on('pointerout',  () => btn.setFillStyle(0x123456, 0.8));
+      btn.on('pointerup',   () => this.scene.start('MainMenu'));
+    }
   }
 }

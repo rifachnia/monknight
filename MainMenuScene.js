@@ -17,6 +17,11 @@ export default class MainMenuScene extends Phaser.Scene {
   }
 
   create() {
+    // Notify React about scene change
+    window.dispatchEvent(new CustomEvent('phaser-scene-change', {
+      detail: { scene: 'MainMenuScene' }
+    }));
+    
     const centerX = this.cameras.main.centerX;
     const centerY = this.cameras.main.centerY;
     const screenWidth = this.cameras.main.width;

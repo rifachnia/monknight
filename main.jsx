@@ -11,6 +11,7 @@ function AuthIsland() {
   const [addr, setAddr] = useState("");
   const [uname, setUname] = useState("");
   const [initError, setInitError] = useState(null);
+  const [currentScene, setCurrentScene] = useState(null);
 
   console.log('🔍 AuthIsland render:', { ready, authenticated, hasUser: !!user, hasLogin: !!login });
 
@@ -223,6 +224,22 @@ function AuthIsland() {
     }
   }, []);
 
+  // Track current scene to conditionally show credit
+  React.useEffect(() => {
+    const handleSceneChange = (event) => {
+      const sceneName = event.detail?.scene;
+      setCurrentScene(sceneName);
+      console.log('🎬 Scene changed to:', sceneName);
+    };
+
+    // Listen for scene change events from Phaser
+    window.addEventListener('phaser-scene-change', handleSceneChange);
+
+    return () => {
+      window.removeEventListener('phaser-scene-change', handleSceneChange);
+    };
+  }, []);
+
   return (
     <>
       {/* Debug indicator */}
@@ -287,32 +304,34 @@ function AuthIsland() {
         </div>
       )}
       
-      {/* Credit Text - Bottom Center */}
-      <div style={{
-        position: 'fixed',
-        bottom: '20px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        color: '#ffa500',
-        fontFamily: 'monospace',
-        fontSize: '14px',
-        zIndex: 10000,
-        cursor: 'pointer',
-        transition: 'all 0.2s ease',
-        textShadow: '1px 1px 2px rgba(0, 0, 0, 0.8)'
-      }}
-      onClick={() => window.open('https://x.com/Rifachnia_', '_blank', 'noopener,noreferrer')}
-      onMouseOver={(e) => {
-        e.target.style.color = '#ffff00';
-        e.target.style.transform = 'translateX(-50%) scale(1.05)';
-      }}
-      onMouseOut={(e) => {
-        e.target.style.color = '#ffa500';
-        e.target.style.transform = 'translateX(-50%) scale(1)';
-      }}
-      >
-        Created by Rifachnia
-      </div>
+      {/* Credit Text - Bottom Center - Only show in Main Menu */}
+      {(currentScene === 'MainMenuScene' || currentScene === null) && (
+        <div style={{
+          position: 'fixed',
+          bottom: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          color: '#ffa500',
+          fontFamily: 'monospace',
+          fontSize: '14px',
+          zIndex: 10000,
+          cursor: 'pointer',
+          transition: 'all 0.2s ease',
+          textShadow: '1px 1px 2px rgba(0, 0, 0, 0.8)'
+        }}
+        onClick={() => window.open('https://x.com/Rifachnia_', '_blank', 'noopener,noreferrer')}
+        onMouseOver={(e) => {
+          e.target.style.color = '#ffff00';
+          e.target.style.transform = 'translateX(-50%) scale(1.05)';
+        }}
+        onMouseOut={(e) => {
+          e.target.style.color = '#ffa500';
+          e.target.style.transform = 'translateX(-50%) scale(1)';
+        }}
+        >
+          Created by Rifachnia
+        </div>
+      )}
 
       {/* Hidden login button for fallback */}
       {!authenticated && (

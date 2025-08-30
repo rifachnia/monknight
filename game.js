@@ -109,6 +109,16 @@ function onBossDefeated(finalScore, gameDuration = 0) {
         console.log("✅ Score successfully submitted to blockchain!");
         console.log("📜 Transaction hash:", result.transactionHash);
         
+        // Show leaderboard after successful submission
+        setTimeout(() => {
+          // Get current scene instance
+          const gameScene = game.scene.getScene('Game');
+          if (gameScene) {
+            // Switch to leaderboard with special flag indicating post-game state
+            gameScene.scene.start('LeaderboardScene', { postGame: true, finalScore, gameDuration });
+          }
+        }, 1000); // Short delay to show success message
+        
         // Check for rank improvement after a short delay
         setTimeout(async () => {
           try {
@@ -447,6 +457,11 @@ function preload() {
 
 // ============ CREATE ============
 function create(data) {
+  // Notify React about scene change
+  window.dispatchEvent(new CustomEvent('phaser-scene-change', {
+    detail: { scene: 'Game' }
+  }));
+  
   // Pastikan seluruh tileset untuk town/battle tersedia
   const needKeys = ['town', 'battle'];
   for (const key of needKeys) {
