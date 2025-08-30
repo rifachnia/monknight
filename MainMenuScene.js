@@ -62,64 +62,74 @@ export default class MainMenuScene extends Phaser.Scene {
     // === HOW TO PLAY POPUP ===
     this.createHowToPlayPopup(howToPlayText, centerX, centerY);
 
-    // ====== LOGIN STATE & BUTTON (KANAN-BAWAH) ======
+    // --- Remove overlapping text labels that cover main buttons ---
+    this.children.list
+      .filter(o =>
+        (o instanceof Phaser.GameObjects.Text || o instanceof Phaser.GameObjects.BitmapText) &&
+        /^(START\s+GAME|LEADERBOARD)$/i.test(((o.text || '') + '').replace(/\s+/g,' ').trim())
+      )
+      .forEach(o => o.destroy());
+
+    // ===== Login state management =====
+    this.isLoggedIn = !!localStorage.getItem('mgid_user');
+
+    // ===== Login button (bottom-right, aligned with "How to Play?") =====
     const cam = this.cameras.main;
-    const w = cam.width, h = cam.height;
-
-    // state login pakai localStorage sederhana
-    this.isLoggedIn = !!localStorage.getItem('monad_user');
-
-    // tombol login kanan-bawah (sejajar "How to Play?")
     const loginBtn = this.add.text(
-      w - 20,                // right padding
-      h - 20,                // bottom padding
+      cam.width - 20, cam.height - 20,
       'Login with Monad Games ID',
       {
-        fontFamily: 'pixelFont',  // samakan dengan font kamu
+        fontFamily: 'pixelFont',
         fontSize: '18px',
         backgroundColor: '#5533aa',
-        color: '#FFFFFF',
+        color: '#ffffff',
         padding: { x: 12, y: 6 }
       }
-    ).setOrigin(1, 1).setInteractive();
+    ).setOrigin(1,1).setInteractive();
 
-    loginBtn.on('pointerdown', async () => {
-      const username = await this.doMonadLogin();        // ganti nanti ke Privy/Monad ID
-      if (username) {
-        localStorage.setItem('monad_user', username);
+    // Keep position during resize
+    this.scale.on('resize', (g) => {
+      const w = g?.width ?? cam.width, h = g?.height ?? cam.height;
+      loginBtn.setPosition(w - 20, h - 20);
+    });
+
+    // Mock login - will be replaced with Privy/Monad Games ID SDK
+    loginBtn.on('pointerdown', () => {
+      const u = window.prompt('Enter Monad Games ID username:');
+      if (u && u.trim()) {
+        localStorage.setItem('mgid_user', u.trim());
         this.isLoggedIn = true;
-        this.showToast('Logged in as ' + username, '#55ff99');
+        this.showToast('Logged in as ' + u.trim(), '#55ff99');
       }
     });
 
-    // ====== KUNCI START GAME JIKA BELUM LOGIN ======
-    // asumsi kamu sudah punya button START lama bernama this.startBtn,
-    // kalau namanya beda, ganti sesuai variabelmu.
+    // ====== LOGIN GATING FOR BUTTONS ======
+    // Remove existing listeners and add login check
     if (this.startBtn && this.startBtn.removeAllListeners) {
       this.startBtn.removeAllListeners('pointerdown');
     }
-    (this.startBtn || this.startButton || this.btnStart)  // fallback jika nama beda
-      ?.on('pointerdown', () => {
-        if (!this.isLoggedIn) {
-          this.showToast('Please login first', '#ff6b6b');
-          return;
-        }
-        try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
-        this.scene.start('Game', { mapKey: 'town' });
-      });
+    this.startBtn.on('pointerdown', () => {
+      if (!this.isLoggedIn) {
+        this.showToast('Please login first', '#ff6b6b');
+        return;
+      }
+      try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
+      this.scene.start('Game', { mapKey: 'town' });
+    });
 
-    // (opsional) kunci Leaderboard juga bila mau
-    (this.leaderBtn || this.btnLeaderboard)
-      ?.on?.('pointerdown', () => {
-        if (!this.isLoggedIn) {
-          this.showToast('Please login first', '#ff6b6b');
-          return;
-        }
-        try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
-        this.scene.launch('Leaderboard');
-        this.scene.bringToTop('Leaderboard');
-        this.scene.pause();
-      });
+    if (this.leaderBtn && this.leaderBtn.removeAllListeners) {
+      this.leaderBtn.removeAllListeners('pointerdown');
+    }
+    this.leaderBtn.on('pointerdown', () => {
+      if (!this.isLoggedIn) {
+        this.showToast('Please login first', '#ff6b6b');
+        return;
+      }
+      try { this.scene.get('Game')?.sfx?.uiClick?.play?.(); } catch {}
+      this.scene.launch('Leaderboard');
+      this.scene.bringToTop('Leaderboard');
+      this.scene.pause();
+    });
 
     // === KEYBOARD SHORTCUTS ===
     this.input.keyboard.on('keydown-ENTER', () => {
@@ -141,30 +151,28 @@ export default class MainMenuScene extends Phaser.Scene {
         this.showToast('Please login first', '#ff6b6b');
       }
     });
+
+    // Fallback login gating for any interactive menu objects
+    this.input.on('gameobjectdown', (pointer, obj) => {
+      if (this.isLoggedIn) return;
+      
+      const isMenuObject = (obj.type === 'Image' || obj.type === 'Sprite' || obj.type === 'Container' || obj.type === 'Text');
+      if (isMenuObject && obj !== loginBtn && obj !== howToPlayText) {
+        this.showToast('Please login first', '#ff6b6b');
+        pointer.event.stopImmediatePropagation();
+      }
+    }, this);
+
+    // Toast helper
+    this.showToast = (msg, color='#ff6b6b') => {
+      const t = this.add.text(this.cameras.main.centerX, this.cameras.main.centerY + 140,
+        msg, { fontFamily: 'pixelFont', fontSize: '18px', color }).setOrigin(0.5);
+      this.tweens.add({ targets: t, alpha: 0, duration: 1400, onComplete: () => t.destroy() });
+    };
   }
 
-  // Helper methods
-  async doMonadLogin() {
-    // sementara: pakai prompt (mock). Nanti ganti ke Privy/Monad Games ID SDK.
-    const u = window.prompt('Enter Monad Games ID username:');
-    if (u && u.trim()) return u.trim();
-    return null;
-  }
-
-  // Toast kecil di layar (buat pesan "Please login first")
-  showToast(msg, color = '#ff6b6b') {
-    const t = this.add.text(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY + 140,
-      msg,
-      { fontFamily: 'pixelFont', fontSize: '18px', color }
-    ).setOrigin(0.5);
-
-    this.tweens.add({
-      targets: t, alpha: 0, duration: 1400, ease: 'Quad.easeOut',
-      onComplete: () => t.destroy()
-    });
-  }
+  // Helper method for toast notifications (defined in create method above)
+  // showToast is defined inline in create() to avoid duplication
 
   // Create How to Play popup
   createHowToPlayPopup(howToPlayText, centerX, centerY) {
